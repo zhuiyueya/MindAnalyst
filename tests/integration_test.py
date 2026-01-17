@@ -67,58 +67,58 @@ async def run_real_test():
     except Exception as e:
         logger.warning(f"Init DB failed: {e}")
 
-    logger.info(f"2. Running Pipeline for Author MID: {TARGET_MID} (Simulated Crawl)...")
+    logger.info(f"2. Running Pipeline for Author MID: {TARGET_MID} (Semi-Real Mode)...")
     
-    # Mock Crawler to bypass anti-crawler
-    with patch("src.services.pipeline.BilibiliCrawler") as MockCrawler:
-        crawler_instance = MockCrawler.return_value
-        crawler_instance.get_author_info = AsyncMock(return_value=MOCK_REAL_AUTHOR)
-        crawler_instance.get_videos = AsyncMock(return_value=MOCK_REAL_VIDEOS)
-        crawler_instance.get_video_info = AsyncMock(return_value={"cid": 12345, "duration": 600})
+    # We patch `get_videos` because the "List API" is unstable/blocked.
+    # But we let `get_video_info` and `get_subtitle` run for REAL to fetch description/subs.
+    with patch("src.services.pipeline.BilibiliCrawler.get_videos", new_callable=AsyncMock) as mock_get_videos:
+        # Provide REAL BVIDs manually
+        mock_get_videos.return_value = [
+            {
+                "bvid": "BV1AM4y1E7zQ", 
+                "title": "拒绝电池思维——不要寻找最优解，而是寻找多个可执行的解",
+                "created": 1700000000,
+                "length": "10:00"
+            }
+        ]
         
-        def get_subtitle_side_effect(bvid, cid):
-            if bvid == "BV1uT411u7e5": return MOCK_REAL_SUBTITLES_1
-            return MOCK_REAL_SUBTITLES_2
-        crawler_instance.get_subtitle = AsyncMock(side_effect=get_subtitle_side_effect)
+        # We also need to patch get_author_info if it fails, but let's try letting it run or mock it if needed.
+        # For stability, let's mock author info too, but let video content be real.
+        with patch("src.services.pipeline.BilibiliCrawler.get_author_info", new_callable=AsyncMock) as mock_get_author:
+            mock_get_author.return_value = {
+                "name": "赏味不足 (Real Content Test)",
+                "face": "http://i0.hdslb.com/bfs/face/member/noface.jpg",
+                "mid": TARGET_MID
+            }
 
-        async for session in get_session():
-            pipeline = PipelineService(session)
-            pipeline.crawler = crawler_instance # Inject mock
-            
-            # Real Ingest Logic (But using mocked crawler data)
-            await pipeline.ingest_author(TARGET_MID)
-            
-            # Verify
-            result = await session.execute(text("SELECT count(*) FROM segment"))
-            count = result.scalar()
-            logger.info(f"Total Segments stored: {count}")
-            
-            if count == 0:
-                logger.error("No segments found!")
-                return
-
-            logger.info("3. Running Real Chat (Real LLM + Real Embeddings)...")
-            chat_service = ChatService(session)
-            
-            # Query 1: Social Media
-            query = "作者对发朋友圈有什么看法？"
-            logger.info(f"--- Query: '{query}' ---")
-            
-            res = await chat_service.chat(query)
-            print(f"\n[Answer]:\n{res['answer']}\n")
-            print("[Citations]:")
-            for cit in res['citations']:
-                print(f"  [{cit['index']}] {cit['text'][:50]}... (Time: {cit['start_time']}s)")
+            async for session in get_session():
+                pipeline = PipelineService(session)
+                # Crawler is NOT fully mocked, only get_videos and get_author_info are patched.
+                # get_video_info and get_subtitle will call the REAL BilibiliCrawler methods.
                 
-            # Query 2: Mental Friction
-            query = "如何解决精神内耗？"
-            logger.info(f"--- Query: '{query}' ---")
-            
-            res = await chat_service.chat(query)
-            print(f"\n[Answer]:\n{res['answer']}\n")
-            print("[Citations]:")
-            for cit in res['citations']:
-                print(f"  [{cit['index']}] {cit['text'][:50]}... (Time: {cit['start_time']}s)")
+                await pipeline.ingest_author(TARGET_MID)
+                
+                # Verify
+                result = await session.execute(text("SELECT count(*) FROM segment"))
+                count = result.scalar()
+                logger.info(f"Total Segments stored: {count}")
+                
+                if count == 0:
+                    logger.error("No segments found!")
+                    return
+
+                logger.info("3. Running Real Chat...")
+                chat_service = ChatService(session)
+                
+                # Query based on the video description we likely fetched
+                query = "什么是电池思维？"
+                logger.info(f"--- Query: '{query}' ---")
+                
+                res = await chat_service.chat(query)
+                print(f"\n[Answer]:\n{res['answer']}\n")
+                print("[Citations]:")
+                for cit in res['citations']:
+                    print(f"  [{cit['index']}] {cit['text'][:50]}... (Time: {cit['start_time']}s)")
 
 if __name__ == "__main__":
     asyncio.run(run_real_test())
