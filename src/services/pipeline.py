@@ -157,6 +157,8 @@ class PipelineService:
                 
                 # Process Content (ASR/Embed)
                 await self.process_content(content)
+            else:
+                logger.info(f"Content already exists: {bvid} - {v['title']}, skipping.")
                 
     async def ingest_author(self, mid_or_url: str, limit: int = 10):
         """Ingest author and their recent videos"""
