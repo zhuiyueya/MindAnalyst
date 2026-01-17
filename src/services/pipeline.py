@@ -149,6 +149,7 @@ class PipelineService:
                     title=v["title"],
                     url=v["url"],
                     type="video",
+                    content_quality="summary",
                     extra_data=v
                 )
                 self.session.add(content)
@@ -158,7 +159,18 @@ class PipelineService:
                 # Process Content (ASR/Embed)
                 await self.process_content(content)
             else:
-                logger.info(f"Content already exists: {bvid} - {v['title']}, skipping.")
+                # If content exists but quality is summary, retry to get full content
+                if content.content_quality == 'summary':
+                    logger.info(f"Content exists but quality is 'summary'. Retrying: {bvid}")
+                    # Delete existing segments to avoid duplication
+                    from sqlalchemy import delete
+                    await self.session.execute(delete(Segment).where(Segment.content_id == content.id))
+                    # We keep the content item but re-process
+                    await self.session.commit()
+                    
+                    await self.process_content(content)
+                else:
+                    logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
                 
     async def ingest_author(self, mid_or_url: str, limit: int = 10):
         """Ingest author and their recent videos"""
@@ -203,6 +215,7 @@ class PipelineService:
                     url=f"https://www.bilibili.com/video/{bvid}",
                     # duration=v.get("length", 0) # bilix might return duration in seconds or string
                     type="video",
+                    content_quality="summary",
                     extra_data=v
                 )
                 self.session.add(content)
@@ -212,6 +225,19 @@ class PipelineService:
                 
                 # 3. Process Content (Transcribe/Segment/Embed)
                 await self.process_content(content)
+            else:
+                 # If content exists but quality is summary, retry to get full content
+                if content.content_quality == 'summary':
+                    logger.info(f"Content exists but quality is 'summary'. Retrying: {bvid}")
+                    # Delete existing segments to avoid duplication
+                    from sqlalchemy import delete
+                    await self.session.execute(delete(Segment).where(Segment.content_id == content.id))
+                    # We keep the content item but re-process
+                    await self.session.commit()
+                    
+                    await self.process_content(content)
+                else:
+                    logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
 
     async def process_content(self, content: ContentItem):
         """Fetch subtitles, segment, and embed"""
@@ -285,6 +311,15 @@ class PipelineService:
                 logger.warning(f"No content found for {content.external_id}")
                 return
 
+            # Determine quality
+            quality = "full"
+            if len(subtitles) == 1 and subtitles[0]["content"].startswith("[Description]"):
+                quality = "summary"
+            
+            # Update content quality
+            content.content_quality = quality
+            self.session.add(content)
+
             # Chunking Strategy
             segments = self._create_chunks(subtitles)
             
@@ -307,7 +342,7 @@ class PipelineService:
                 self.session.add(segment)
             
             await self.session.commit()
-            logger.info(f"Saved {len(segments)} segments for {content.title}")
+            logger.info(f"Saved {len(segments)} segments for {content.title} (Quality: {quality})")
             
         except Exception as e:
             logger.error(f"Error processing {content.external_id}: {e}")

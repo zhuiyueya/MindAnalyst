@@ -27,6 +27,7 @@ class ContentItem(SQLModel, table=True):
     type: str = Field(default="video") # video, article
     title: str
     url: str
+    content_quality: str = Field(default="summary") # 'full' or 'summary'
     published_at: Optional[datetime] = None
     duration: Optional[int] = None # seconds
     extra_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))

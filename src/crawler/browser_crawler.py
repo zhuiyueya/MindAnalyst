@@ -72,103 +72,135 @@ class BrowserCrawler:
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await asyncio.sleep(2)
             
-            # 2. Extract Videos (More precise selectors)
-            # Try to find list items first
-            # New Bilibili Space usually uses .bili-grid-video-card or .list-item
-            # Update: Added .bili-video-card (general), .feed-card (dynamic)
-            video_items = await page.query_selector_all(".bili-grid-video-card .bili-video-card, .bili-video-card, .list-item, .small-item, .cube-list li, .submit-video .small-item, .video-list .video-item, .feed-card")
-            
-            if not video_items:
-                # Fallback to generic link search if specific structure not found
-                logger.info("No list items found, falling back to link search...")
-                video_items = await page.query_selector_all("a[href*='/video/BV']")
-
+            # 2. Extract Videos (Pagination Loop)
             videos = []
             seen = set()
+            page_num = 1
             
-            for el in video_items:
+            while True:
+                logger.info(f"Scraping page {page_num}...")
+                
+                # Scroll to bottom to trigger lazy loading
+                for _ in range(3):
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await asyncio.sleep(1)
+                
+                # Extract from current page
+                video_items = await page.query_selector_all(".bili-grid-video-card .bili-video-card, .bili-video-card, .list-item, .small-item, .cube-list li, .submit-video .small-item, .video-list .video-item, .feed-card")
+                
+                if not video_items:
+                    # Fallback to generic link search
+                    logger.info("No list items found on current page, falling back to link search...")
+                    video_items = await page.query_selector_all("a[href*='/video/BV']")
+
+                current_page_new_count = 0
+                for el in video_items:
+                    if limit > 0 and len(videos) >= limit:
+                        break
+                    
+                    # Check if el is a container or a link itself
+                    tag_name = await page.evaluate("el => el.tagName", el)
+                    
+                    # Initialize variables
+                    link_el = None
+                    title = ""
+                    
+                    # Strategy A: It's a Card Container (div/li)
+                    if tag_name != "A":
+                        # 1. Try to find title container
+                        title_container = await el.query_selector(".bili-video-card__title")
+                        
+                        if title_container:
+                            title = await title_container.get_attribute("title")
+                            link_el = await title_container.query_selector("a")
+                        
+                        # 2. Fallback: Try generic title/link selectors inside card
+                        if not link_el:
+                            link_el = await el.query_selector("a.title") or await el.query_selector("a.cover") or await el.query_selector("a[href*='/video/BV']")
+                        
+                        # 3. Fallback: Try Image Alt text for title
+                        if not title:
+                            img_el = await el.query_selector("img")
+                            if img_el:
+                                title = await img_el.get_attribute("alt")
+                                
+                        # 4. Fallback: Try to find title in link text or title attribute
+                        if not title and link_el:
+                             title = await link_el.get_attribute("title") or await link_el.inner_text()
+
+                    # Strategy B: It's a Link
+                    else:
+                        link_el = el
+                        title = await el.get_attribute("title") or await el.inner_text()
+
+                    # Check for Charging Tag
+                    charge_tag = await el.query_selector(".charge-tag")
+                    if charge_tag:
+                        txt = await charge_tag.inner_text()
+                        if "充电" in txt:
+                            continue
+
+                    # Finalize Video Object
+                    if not link_el:
+                        continue
+                        
+                    href = await link_el.get_attribute("href")
+                    if href and "/video/BV" in href:
+                        parts = href.split("/video/")
+                        if len(parts) > 1:
+                            bvid = parts[1].split("/")[0].split("?")[0]
+                            if bvid not in seen:
+                                title_clean = title.strip() if title else ""
+                                
+                                if "充电专属" in title_clean:
+                                    continue
+                                    
+                                if title_clean and len(title_clean) > 0:
+                                    seen.add(bvid)
+                                    videos.append({
+                                        "bvid": bvid, 
+                                        "title": title_clean,
+                                        "url": f"https://www.bilibili.com/video/{bvid}"
+                                    })
+                                    current_page_new_count += 1
+                
+                logger.info(f"Page {page_num}: Found {current_page_new_count} new videos. Total: {len(videos)}")
+
+                # Check limit
                 if limit > 0 and len(videos) >= limit:
+                    logger.info(f"Reached limit {limit}. Stopping.")
                     break
                 
-                # Check if el is a container or a link itself
-                tag_name = await page.evaluate("el => el.tagName", el)
+                # Check if we are stuck (no new videos found on this page despite navigation)
+                # But wait, maybe the page just has old videos? 
+                # If we are strictly paging, we should see new videos unless we are at end.
+                # If current_page_new_count == 0, it likely means we reached end or all on this page were seen.
+                # However, scraping multiple pages might have duplicates? No, usually distinct.
+                # Let's trust the 'Next' button state mostly.
                 
-                # Initialize variables
-                link_el = None
-                title = ""
+                # Try to go to next page
+                next_btn = None
+                # Try strict selector based on user feedback
+                # <button class="vui_button ... vui_pagenation--btn-side">下一页</button>
+                side_btns = await page.query_selector_all("button.vui_pagenation--btn-side")
                 
-                # Strategy A: It's a Card Container (div/li)
-                # This is the expected path for .bili-video-card
-                if tag_name != "A":
-                    # 1. Try to find title container (User provided structure)
-                    # <div class="bili-video-card__title" title="..."> <a href="...">...</a> </div>
-                    title_container = await el.query_selector(".bili-video-card__title")
-                    
-                    if title_container:
-                        title = await title_container.get_attribute("title")
-                        link_el = await title_container.query_selector("a")
-                    
-                    # 2. Fallback: Try generic title/link selectors inside card
-                    if not link_el:
-                        link_el = await el.query_selector("a.title") or await el.query_selector("a.cover") or await el.query_selector("a[href*='/video/BV']")
-                    
-                    # 3. Fallback: Try Image Alt text for title if still empty
-                    if not title:
-                        img_el = await el.query_selector("img")
-                        if img_el:
-                            title = await img_el.get_attribute("alt")
-                            
-                    # 4. Fallback: Try to find title in link text or title attribute
-                    if not title and link_el:
-                         title = await link_el.get_attribute("title") or await link_el.inner_text()
-
-                # Strategy B: It's a Link (Fallback mode)
+                for btn in side_btns:
+                    text = await btn.inner_text()
+                    is_disabled = await btn.get_attribute("disabled")
+                    # If disabled attribute exists (even empty string), it is disabled.
+                    # get_attribute returns None if missing.
+                    if "下一页" in text and is_disabled is None:
+                        next_btn = btn
+                        break
+                
+                if next_btn:
+                    logger.info("Navigating to next page...")
+                    await next_btn.click()
+                    page_num += 1
+                    await asyncio.sleep(5) # Wait for load
                 else:
-                    link_el = el
-                    # For a direct link, title is usually the text or title attribute
-                    title = await el.get_attribute("title") or await el.inner_text()
-                    
-                    # Try to find a parent that might contain the title if this is just a cover link
-                    # (Skipping complex parent traversal for now to keep it simple, 
-                    # assuming fallback captures title links too)
-
-                # 2. Check for Charging Tag
-                # <div class="bili-cover-card__tag charge-tag">
-                # Only check if we are in a container. If we are just a link, checking for tag inside might be wrong
-                # unless the link WRAPS the card (which happens).
-                charge_tag = await el.query_selector(".charge-tag")
-                
-                if charge_tag:
-                    txt = await charge_tag.inner_text()
-                    if "充电" in txt:
-                        logger.info(f"Skipping charging video (tag detected): {title.strip() if title else 'Unknown Title'}")
-                        continue
-
-                # 3. Finalize Video Object
-                if not link_el:
-                    continue
-                    
-                href = await link_el.get_attribute("href")
-                if href and "/video/BV" in href:
-                    # Clean bvid
-                    parts = href.split("/video/")
-                    if len(parts) > 1:
-                        bvid = parts[1].split("/")[0].split("?")[0]
-                        if bvid not in seen:
-                            title_clean = title.strip() if title else ""
-                            
-                            # Secondary check for charging text in title
-                            if "充电专属" in title_clean:
-                                logger.info(f"Skipping charging video: {bvid}")
-                                continue
-                                
-                            if title_clean and len(title_clean) > 0:
-                                seen.add(bvid)
-                                videos.append({
-                                    "bvid": bvid, 
-                                    "title": title_clean,
-                                    "url": f"https://www.bilibili.com/video/{bvid}"
-                                })
+                    logger.info("No next page or reached end.")
+                    break
             
             result["videos"] = videos
             logger.info(f"Found {len(videos)} videos on page.")
