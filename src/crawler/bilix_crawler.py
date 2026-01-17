@@ -211,15 +211,18 @@ class BilixCrawler:
         """
         url = f"https://www.bilibili.com/video/{bvid}"
         try:
+            # Clean download dir to ensure we capture the correct file
+            # CAUTION: This assumes no concurrent downloads in this dir!
+            for f in os.listdir(self.download_dir):
+                fp = os.path.join(self.download_dir, f)
+                try:
+                    if os.path.isfile(fp):
+                        os.unlink(fp)
+                except Exception:
+                    pass
+
             async with DownloaderBilibili(part_concurrency=1) as d:
-                # Need to handle existing files correctly.
-                # bilix might log "Already exists" and return None?
-                # Let's try to list files before/after or inspect return value.
-                
-                # Check if file already exists in download dir
-                # Filename logic in bilix is complex (title based). 
-                # So we rely on bilix return.
-                
+                # bilix will download file here
                 paths = await d.get_video(url, path=self.download_dir, only_audio=True, image=False)
                 
                 if paths:
@@ -227,12 +230,12 @@ class BilixCrawler:
                         return str(paths[0])
                     return str(paths)
                 
-                # If paths is None/Empty, maybe it exists?
-                # We can try to search for file with BVID or title in dir?
-                # But title might have changed.
+                # Fallback: Check directory for any downloaded file
+                files = [f for f in os.listdir(self.download_dir) if not f.startswith(".")]
+                if files:
+                    # Return the first file found (assuming we cleaned dir)
+                    return os.path.join(self.download_dir, files[0])
                 
-                # Fallback: list files in dir, pick latest modified that matches?
-                # Or just return None and let pipeline handle.
                 return None
                 
         except Exception as e:
