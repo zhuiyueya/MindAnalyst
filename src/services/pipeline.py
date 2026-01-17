@@ -44,42 +44,62 @@ class PipelineService:
             self.browser_crawler = BrowserCrawler()
             
         # 1. Scrape Videos
-        videos = await self.browser_crawler.get_videos_from_page(url, limit=limit)
+        result = await self.browser_crawler.get_videos_from_page(url, limit=limit)
+        videos = result.get("videos", [])
+        author_data = result.get("author", None)
         
         if not videos:
             logger.warning(f"No videos found on {url}")
             return
             
-        # 2. Process each video using existing logic
-        # For simplicity, we create a dummy Author or try to fetch Author info from first video
-        
-        # Get Author Info from first video to create Author record
+        # 2. Process Author
+        # Use scraped author info if available, otherwise try bilix
         first_vid = videos[0]
+        author = None
+        
         try:
-            # Try to get author info via crawler
-            logger.info(f"Fetching author info for BVID: {first_vid['bvid']}")
-            author_info = await self.crawler.get_author_info(first_vid['bvid'])
+            mid = author_data["mid"] if author_data else "0"
             
+            # If we didn't scrape author info (e.g. not on Space page), try fallback
+            if not author_data or not mid:
+                logger.info(f"Fetching author info for BVID: {first_vid['bvid']}")
+                bilix_author = await self.crawler.get_author_info(first_vid['bvid'])
+                mid = str(bilix_author["mid"])
+                author_data = {
+                    "mid": mid,
+                    "name": bilix_author["name"],
+                    "face": bilix_author["face"],
+                    "url": f"https://space.bilibili.com/{mid}"
+                }
+
             # Create/Get Author
-            stmt = select(Author).where(Author.external_id == str(author_info["mid"]))
-            result = await self.session.execute(stmt)
-            author = result.scalar_one_or_none()
+            stmt = select(Author).where(Author.external_id == mid)
+            result_db = await self.session.execute(stmt)
+            author = result_db.scalar_one_or_none()
             
             if not author:
                 author = Author(
                     platform="bilibili",
-                    external_id=str(author_info["mid"]),
-                    name=author_info["name"],
-                    homepage_url=f"https://space.bilibili.com/{author_info['mid']}",
-                    avatar_url=author_info["face"]
+                    external_id=mid,
+                    name=author_data["name"],
+                    homepage_url=author_data["url"],
+                    avatar_url=author_data["face"]
                 )
                 self.session.add(author)
                 await self.session.commit()
                 await self.session.refresh(author)
                 logger.info(f"Created author: {author.name}")
+            else:
+                # Optional: Update author info
+                if author.name == "Unknown Author" and author_data["name"] != "Unknown Author":
+                    author.name = author_data["name"]
+                    author.avatar_url = author_data["face"]
+                    self.session.add(author)
+                    await self.session.commit()
+                    logger.info(f"Updated author info: {author.name}")
                 
         except Exception as e:
-            logger.error(f"Failed to get author info: {e}. Creating dummy author.")
+            logger.error(f"Failed to get/create author: {e}. Creating dummy author.")
             # Fallback: Create a dummy author if we can't fetch info
             # Check if dummy exists
             dummy_mid = "0"
@@ -102,6 +122,20 @@ class PipelineService:
         # 3. Ingest Videos
         for v in videos:
             bvid = v["bvid"]
+            
+            # Correct title using bilix API if needed (e.g. RPA got partial data)
+            # This adds latency but ensures data quality
+            try:
+                # We can optimize this by only calling if title looks suspicious, 
+                # but for MVP let's trust API more than RPA
+                v_info_meta = await self.crawler.get_video_info(bvid)
+                if v_info_meta.get("title") and v_info_meta["title"] != "Unknown Title":
+                    if v["title"] != v_info_meta["title"]:
+                        logger.info(f"Correcting title for {bvid}: '{v['title']}' -> '{v_info_meta['title']}'")
+                        v["title"] = v_info_meta["title"]
+            except Exception as e:
+                logger.warning(f"Failed to fetch metadata for {bvid}: {e}")
+
             # Check if content exists
             stmt = select(ContentItem).where(ContentItem.external_id == bvid)
             result = await self.session.execute(stmt)
