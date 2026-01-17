@@ -7,6 +7,7 @@ from src.models.models import Author, ContentItem, Segment, Summary
 from src.crawler.bilix_crawler import BilixCrawler
 from src.crawler.browser_crawler import BrowserCrawler
 from src.services.asr import ASRService
+from src.services.storage import StorageService
 from src.database.db import get_session
 from sentence_transformers import SentenceTransformer
 import logging
@@ -21,6 +22,7 @@ class PipelineService:
         self.crawler = BilixCrawler()
         self.browser_crawler = None # Lazy init
         self.asr = ASRService()
+        self.storage = StorageService() # MinIO
         
         # Load embedding model lazily or globally. For MVP, load here.
         if os.getenv("MOCK_EMBEDDING"):
@@ -33,15 +35,16 @@ class PipelineService:
                 logger.warning(f"Failed to load local embedder: {e}")
                 self.embedder = None
 
-    async def ingest_from_browser(self, url: str):
+    async def ingest_from_browser(self, url: str, limit: int = 0):
         """
         Use BrowserCrawler to get videos from a page (e.g. Space) and ingest them.
+        limit: Max videos to process.
         """
         if not self.browser_crawler:
             self.browser_crawler = BrowserCrawler()
             
         # 1. Scrape Videos
-        videos = await self.browser_crawler.get_videos_from_page(url)
+        videos = await self.browser_crawler.get_videos_from_page(url, limit=limit)
         
         if not videos:
             logger.warning(f"No videos found on {url}")
@@ -191,6 +194,13 @@ class PipelineService:
                 audio_path = await self.crawler.download_audio(content.external_id)
                 if audio_path:
                     try:
+                        # Upload to MinIO
+                        object_name = f"{content.external_id}_{os.path.basename(audio_path)}"
+                        # Note: We need await if upload is async, but MinIO client is sync. 
+                        # We can run in executor if needed, but for MVP sync is fine or wrap it.
+                        # Actually StorageService.upload_file is defined as async but calls sync minio.
+                        await self.storage.upload_file(audio_path, object_name)
+                        
                         transcription = await self.asr.transcribe(audio_path)
                         # Process transcription result
                         # OpenAI 'verbose_json' returns 'segments' list if supported by SiliconFlow
@@ -219,8 +229,12 @@ class PipelineService:
                         logger.error(f"ASR failed for {content.external_id}: {asr_e}")
                     finally:
                         # Clean up audio file
-                        if os.path.exists(audio_path):
-                            os.remove(audio_path)
+                        if audio_path and os.path.exists(audio_path):
+                            try:
+                                os.remove(audio_path)
+                                logger.info(f"Deleted local audio file: {audio_path}")
+                            except Exception as rm_e:
+                                logger.warning(f"Failed to delete {audio_path}: {rm_e}")
             
             # 3. Fallback: Description
             if not subtitles and v_info.get("desc"):

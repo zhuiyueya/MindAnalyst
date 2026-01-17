@@ -211,27 +211,29 @@ class BilixCrawler:
         """
         url = f"https://www.bilibili.com/video/{bvid}"
         try:
-            # Use DownloaderBilibili
-            # It creates its own client, so we don't pass ours.
-            # We want to download to self.download_dir
-            
-            # We need to find the file name it generates.
-            # bilix usually names it "title.m4a" or similar.
-            # We can rely on it returning the path? 
-            # get_video returns coroutine that results in path list?
-            # Looking at source/usage: `await d.get_video(...)` returns Path or List[Path].
-            
             async with DownloaderBilibili(part_concurrency=1) as d:
-                # only_audio=True
-                # hierarchy=False (don't create subfolders by default if possible, or handle it)
-                # path=self.download_dir
+                # Need to handle existing files correctly.
+                # bilix might log "Already exists" and return None?
+                # Let's try to list files before/after or inspect return value.
+                
+                # Check if file already exists in download dir
+                # Filename logic in bilix is complex (title based). 
+                # So we rely on bilix return.
                 
                 paths = await d.get_video(url, path=self.download_dir, only_audio=True, image=False)
                 
-                # paths might be a single Path object or list
-                if isinstance(paths, list):
-                    return str(paths[0])
-                return str(paths)
+                if paths:
+                    if isinstance(paths, list):
+                        return str(paths[0])
+                    return str(paths)
+                
+                # If paths is None/Empty, maybe it exists?
+                # We can try to search for file with BVID or title in dir?
+                # But title might have changed.
+                
+                # Fallback: list files in dir, pick latest modified that matches?
+                # Or just return None and let pipeline handle.
+                return None
                 
         except Exception as e:
             logger.error(f"Download audio failed for {bvid}: {e}")

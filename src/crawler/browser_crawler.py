@@ -24,10 +24,11 @@ class BrowserCrawler:
             logger.error(f"Failed to connect to browser: {e}")
             raise ConnectionError(f"Could not connect to Chrome at {self.cdp_url}. Make sure it is running with --remote-debugging-port=9222")
 
-    async def get_videos_from_page(self, url: str) -> List[Dict]:
+    async def get_videos_from_page(self, url: str, limit: int = 0) -> List[Dict]:
         """
         Navigate to a Bilibili page (Space or Video list) and extract video links.
         Assumes the browser is already logged in or has access.
+        limit: Max videos to return. 0 for all found.
         """
         if not self.browser:
             await self.connect()
@@ -50,6 +51,9 @@ class BrowserCrawler:
             seen = set()
             
             for el in links:
+                if limit > 0 and len(videos) >= limit:
+                    break
+                    
                 href = await el.get_attribute("href")
                 if href and "/video/BV" in href:
                     # Clean bvid
@@ -58,11 +62,18 @@ class BrowserCrawler:
                         bvid = parts[1].split("/")[0].split("?")[0]
                         if bvid not in seen:
                             title = await el.get_attribute("title") or await el.inner_text()
-                            if title and len(title.strip()) > 0:
+                            title_clean = title.strip()
+                            
+                            # Filter out charging videos
+                            if "充电专属" in title_clean:
+                                logger.info(f"Skipping charging video: {bvid}")
+                                continue
+                                
+                            if title_clean and len(title_clean) > 0:
                                 seen.add(bvid)
                                 videos.append({
                                     "bvid": bvid, 
-                                    "title": title.strip(),
+                                    "title": title_clean,
                                     "url": f"https://www.bilibili.com/video/{bvid}"
                                 })
             

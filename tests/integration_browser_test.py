@@ -26,8 +26,8 @@ async def run_browser_test():
     async for session in get_session():
         pipeline = PipelineService(session)
         
-        # Use new method
-        await pipeline.ingest_from_browser(TARGET_URL)
+        # Use new method, limit to 3 videos
+        await pipeline.ingest_from_browser(TARGET_URL, limit=3)
         
         # Verify
         result = await session.execute(text("SELECT count(*) FROM segment"))

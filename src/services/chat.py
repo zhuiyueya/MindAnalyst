@@ -25,7 +25,7 @@ class ChatService:
         else:
             self.client = None
 
-    async def retrieve(self, query: str, top_k: int = 5) -> List[Segment]:
+    async def retrieve(self, query: str, author_id: str = None, top_k: int = 5) -> List[Segment]:
         """Simple vector search"""
         if self.embedder:
             query_vec = self.embedder.encode(query).tolist()
@@ -39,7 +39,13 @@ class ChatService:
         # so we might use raw SQL or session.exec with specific order_by
         
         # Using l2_distance (<->) operator
-        stmt = select(Segment).order_by(Segment.embedding.l2_distance(query_vec)).limit(top_k)
+        # Join ContentItem to filter by author if needed
+        stmt = select(Segment).join(ContentItem)
+        
+        if author_id:
+            stmt = stmt.where(ContentItem.author_id == author_id)
+            
+        stmt = stmt.order_by(Segment.embedding.l2_distance(query_vec)).limit(top_k)
         result = await self.session.execute(stmt)
         segments = result.scalars().all()
         
@@ -51,10 +57,10 @@ class ChatService:
             
         return segments
 
-    async def chat(self, query: str) -> Dict:
+    async def chat(self, query: str, author_id: str = None) -> Dict:
         """RAG Chat"""
         # 1. Retrieve
-        segments = await self.retrieve(query)
+        segments = await self.retrieve(query, author_id=author_id)
         
         if not segments:
             return {"answer": "未找到相关内容。", "citations": []}
