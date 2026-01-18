@@ -9,11 +9,13 @@ import os
 load_dotenv()
 
 from src.database.db import get_session, init_db
-from src.models.models import Author, ContentItem, Segment
+from src.models.models import Author, ContentItem, Segment, Summary, AuthorReport
 from src.workflows.ingestion import IngestionWorkflow
+from src.workflows.analysis import AnalysisWorkflow
+from src.adapters.storage.service import StorageService
 from src.rag.engine import RAGEngine
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
 import asyncio
 from contextlib import asynccontextmanager
@@ -60,7 +62,242 @@ async def list_authors(session: AsyncSession = Depends(get_session)):
     stmt = select(Author)
     result = await session.execute(stmt)
     authors = result.scalars().all()
+    # Populate extra fields like video count if needed
+    # For now, just return author objects
     return authors
+
+@app.get("/api/v1/authors/{author_id}")
+async def get_author(author_id: str, session: AsyncSession = Depends(get_session)):
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+    
+    # Fetch latest report
+    stmt = select(AuthorReport).where(AuthorReport.author_id == author_id).order_by(AuthorReport.created_at.desc()).limit(1)
+    result = await session.execute(stmt)
+    report = result.scalar_one_or_none()
+    
+    return {
+        "author": author,
+        "latest_report": report
+    }
+
+@app.get("/api/v1/authors/{author_id}/videos")
+async def get_author_videos(author_id: str, session: AsyncSession = Depends(get_session)):
+    stmt = select(ContentItem).where(ContentItem.author_id == author_id).order_by(ContentItem.published_at.desc())
+    result = await session.execute(stmt)
+    videos = result.scalars().all()
+    
+    # We might want to include summary status
+    video_list = []
+    for v in videos:
+        # Check if summary exists
+        # This is N+1 query, but for MVP it's okay (or optimize with join)
+        stmt_sum = select(Summary).where(Summary.content_id == v.id)
+        res_sum = await session.execute(stmt_sum)
+        summary = res_sum.scalar_one_or_none()
+        
+        v_dict = v.model_dump()
+        v_dict["has_summary"] = bool(summary)
+        video_list.append(v_dict)
+        
+    return video_list
+
+@app.get("/api/v1/videos/{video_id}")
+async def get_video_detail(video_id: str, session: AsyncSession = Depends(get_session)):
+    # video_id can be UUID or BVID? Let's assume UUID for now as it is primary key.
+    # But frontend might pass BVID if we didn't expose UUID. 
+    # Let's try UUID first, if fails try BVID.
+    
+    video = await session.get(ContentItem, video_id)
+    if not video:
+        # Try external_id
+        stmt = select(ContentItem).where(ContentItem.external_id == video_id)
+        result = await session.execute(stmt)
+        video = result.scalar_one_or_none()
+        
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    # Get Summary
+    stmt_sum = select(Summary).where(Summary.content_id == video.id)
+    res_sum = await session.execute(stmt_sum)
+    summary = res_sum.scalar_one_or_none()
+    
+    # Get Segments (Transcript)
+    stmt_seg = select(Segment).where(Segment.content_id == video.id).order_by(Segment.segment_index)
+    res_seg = await session.execute(stmt_seg)
+    segments = res_seg.scalars().all()
+
+    return {
+        "video": video.model_dump(),
+        "summary": summary.model_dump() if summary else None,
+        "segments": [s.model_dump(exclude={"embedding"}) for s in segments],
+    }
+
+@app.get("/api/v1/videos/{video_id}/playback")
+async def get_video_playback_url(video_id: str, session: AsyncSession = Depends(get_session)):
+    # Logic: 
+    # 1. Get video content item to find extra_data or construct object name
+    # 2. Check if we have original file in MinIO.
+    #    The naming convention in ingestion.py was: f"{content.external_id}_{os.path.basename(audio_path)}"
+    #    But we deleted the local file. We uploaded it.
+    #    We need to know the object name. 
+    #    Ideally, ContentItem should store 'storage_object_name'. 
+    #    But we didn't add that field. 
+    #    Workaround: Search MinIO for object starting with BVID? 
+    #    Or just try to reconstruct it? We don't know the extension (.aac, .mp3).
+    #    Let's use a helper to list objects or assume we can find it.
+    
+    #    For now, let's look at ingestion.py again. 
+    #    object_name = f"{content.external_id}_{os.path.basename(audio_path)}"
+    #    And audio_path comes from crawler.download_audio.
+    
+    #    For MVP, let's list objects in bucket with prefix matching external_id.
+    
+    video = await session.get(ContentItem, video_id)
+    if not video:
+         # Try external_id
+        stmt = select(ContentItem).where(ContentItem.external_id == video_id)
+        result = await session.execute(stmt)
+        video = result.scalar_one_or_none()
+        
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    storage = StorageService()
+    # List objects with prefix
+    objects = storage.client.list_objects(storage.bucket_name, prefix=video.external_id, recursive=True)
+    
+    # Find first match
+    target_obj = None
+    for obj in objects:
+        if obj.object_name.startswith(video.external_id):
+            target_obj = obj.object_name
+            break
+            
+    if not target_obj:
+        raise HTTPException(status_code=404, detail="Media file not found in storage")
+        
+    url = storage.get_file_url(target_obj)
+    return {"url": url}
+
+@app.post("/api/v1/authors/{author_id}/regenerate_report")
+async def regenerate_author_report(
+    author_id: str, 
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    # Verify author exists
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+        
+    background_tasks.add_task(run_regenerate_report, author_id)
+    return {"status": "started", "message": "Report regeneration started"}
+
+@app.post("/api/v1/authors/{author_id}/resummarize_all")
+async def resummarize_all_videos(
+    author_id: str, 
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+        
+    background_tasks.add_task(run_resummarize_author, author_id)
+    return {"status": "started", "message": "Batch summarization started"}
+
+@app.post("/api/v1/videos/{video_id}/resummarize")
+async def resummarize_video(
+    video_id: str, 
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    # Verify video
+    video = await session.get(ContentItem, video_id)
+    if not video:
+        # Try external_id
+        stmt = select(ContentItem).where(ContentItem.external_id == video_id)
+        result = await session.execute(stmt)
+        video = result.scalar_one_or_none()
+        
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    background_tasks.add_task(run_resummarize_video, video.id)
+    return {"status": "started", "message": "Video summarization started"}
+
+# Background Task Functions
+
+async def run_regenerate_report(author_id: str):
+    async for session in get_session():
+        analysis = AnalysisWorkflow(session)
+        try:
+            await analysis.generate_author_report(author_id)
+        except Exception as e:
+            logger.error(f"Report regeneration failed: {e}")
+        break
+
+async def run_resummarize_video(content_id: str):
+    async for session in get_session():
+        analysis = AnalysisWorkflow(session)
+        try:
+            content = await session.get(ContentItem, content_id)
+            if not content:
+                return
+            
+            # Fetch segments
+            stmt = select(Segment).where(Segment.content_id == content_id).order_by(Segment.segment_index)
+            res = await session.execute(stmt)
+            segments = res.scalars().all()
+            
+            if not segments:
+                logger.warning(f"No segments found for {content.title}, cannot summarize.")
+                return
+            
+            # Check for existing summary to update
+            stmt_sum = select(Summary).where(Summary.content_id == content_id)
+            res_sum = await session.execute(stmt_sum)
+            existing_summary = res_sum.scalar_one_or_none()
+            
+            await analysis.generate_content_summary(content, segments, existing_summary=existing_summary)
+            
+        except Exception as e:
+            logger.error(f"Video summarization failed: {e}")
+        break
+
+async def run_resummarize_author(author_id: str):
+    async for session in get_session():
+        analysis = AnalysisWorkflow(session)
+        try:
+            # Get all contents
+            stmt = select(ContentItem).where(ContentItem.author_id == author_id)
+            res = await session.execute(stmt)
+            contents = res.scalars().all()
+            
+            logger.info(f"Re-summarizing {len(contents)} videos for author {author_id}")
+            
+            for content in contents:
+                # Fetch segments
+                stmt_seg = select(Segment).where(Segment.content_id == content.id).order_by(Segment.segment_index)
+                res_seg = await session.execute(stmt_seg)
+                segments = res_seg.scalars().all()
+                
+                if segments:
+                    # Check for existing summary
+                    stmt_sum = select(Summary).where(Summary.content_id == content.id)
+                    res_sum = await session.execute(stmt_sum)
+                    existing_summary = res_sum.scalar_one_or_none()
+                    
+                    await analysis.generate_content_summary(content, segments, existing_summary=existing_summary)
+                else:
+                    logger.info(f"Skipping {content.title} (no segments)")
+                    
+        except Exception as e:
+            logger.error(f"Batch summarization failed: {e}")
+        break
 
 @app.post("/api/v1/ingest")
 async def ingest_author(

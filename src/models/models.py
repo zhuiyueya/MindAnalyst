@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column
+from pydantic import field_serializer
 import uuid
 
 def generate_uuid():
@@ -47,6 +48,14 @@ class Segment(SQLModel, table=True):
     text: str
     # 'paraphrase-multilingual-MiniLM-L12-v2' outputs 384 dimensions
     embedding: List[float] = Field(sa_column=Column(Vector(384))) 
+    
+    @field_serializer("embedding")
+    def _serialize_embedding(self, v):
+        if v is None:
+            return None
+        if hasattr(v, "tolist"):
+            v = v.tolist()
+        return [float(x) for x in v]
     
     content: ContentItem = Relationship(back_populates="segments")
 
