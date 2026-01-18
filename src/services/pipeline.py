@@ -172,7 +172,26 @@ class PipelineService:
                     
                     await self.process_content(content)
                 else:
-                    logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
+                    # Content exists and is 'full' quality.
+                    # Check if summary exists and is valid.
+                    stmt_sum = select(Summary).where(Summary.content_id == content.id)
+                    res_sum = await self.session.execute(stmt_sum)
+                    existing_summary = res_sum.scalar_one_or_none()
+                    
+                    if not existing_summary or not existing_summary.content:
+                        logger.info(f"Content {bvid} exists but missing summary. Generating summary...")
+                        # Fetch segments
+                        stmt_seg = select(Segment).where(Segment.content_id == content.id).order_by(Segment.segment_index)
+                        res_seg = await self.session.execute(stmt_seg)
+                        segments = res_seg.scalars().all()
+                        
+                        if segments:
+                            # Pass existing summary to update it if present
+                            await self.generate_content_summary(content, segments, existing_summary=existing_summary)
+                        else:
+                            logger.warning(f"Content {bvid} has 'full' quality but no segments found. Skipping summary.")
+                    else:
+                        logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
         
         # 3. Generate Author Report
         # This is done after processing all videos in this batch
@@ -257,7 +276,26 @@ class PipelineService:
                     
                     await self.process_content(content)
                 else:
-                    logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
+                    # Content exists and is 'full' quality.
+                    # Check if summary exists and is valid.
+                    stmt_sum = select(Summary).where(Summary.content_id == content.id)
+                    res_sum = await self.session.execute(stmt_sum)
+                    existing_summary = res_sum.scalar_one_or_none()
+                    
+                    if not existing_summary or not existing_summary.content:
+                        logger.info(f"Content {bvid} exists but missing summary. Generating summary...")
+                        # Fetch segments
+                        stmt_seg = select(Segment).where(Segment.content_id == content.id).order_by(Segment.segment_index)
+                        res_seg = await self.session.execute(stmt_seg)
+                        segments = res_seg.scalars().all()
+                        
+                        if segments:
+                            # Pass existing summary to update it if present
+                            await self.generate_content_summary(content, segments, existing_summary=existing_summary)
+                        else:
+                            logger.warning(f"Content {bvid} has 'full' quality but no segments found. Skipping summary.")
+                    else:
+                        logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
 
         # 3. Generate Author Report
         if videos:
@@ -407,9 +445,10 @@ class PipelineService:
             
         return chunks
 
-    async def generate_content_summary(self, content: ContentItem, segments: List[Segment]):
+    async def generate_content_summary(self, content: ContentItem, segments: List[Segment], existing_summary: Summary = None):
         """
         Generate structured summary for a single content item using LLM.
+        If existing_summary is provided, update it instead of creating new.
         """
         logger.info(f"Generating summary for {content.title}...")
         
@@ -423,14 +462,21 @@ class PipelineService:
             logger.warning(f"Summary generation failed for {content.title}: {result['error']}")
             return
 
-        # Save to Summary table
-        summary = Summary(
-            content_id=content.id,
-            summary_type="structured",
-            content=result.get("summary", ""),
-            json_data=result
-        )
-        self.session.add(summary)
+        if existing_summary:
+            logger.info(f"Updating existing summary for {content.title}")
+            existing_summary.content = result.get("summary", "")
+            existing_summary.json_data = result
+            self.session.add(existing_summary)
+        else:
+            # Save to Summary table
+            summary = Summary(
+                content_id=content.id,
+                summary_type="structured",
+                content=result.get("summary", ""),
+                json_data=result
+            )
+            self.session.add(summary)
+            
         await self.session.commit()
         logger.info(f"Saved summary for {content.title}")
 
