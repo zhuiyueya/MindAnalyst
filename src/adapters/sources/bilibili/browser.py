@@ -53,6 +53,16 @@ class BrowserCrawler:
         result = {"author": None, "videos": []}
         
         try:
+            # Optimization: If URL is a space root, go directly to video list
+            # This avoids double navigation (Home -> Video List)
+            if "/space.bilibili.com/" in url and "/video" not in url:
+                if "?" in url:
+                    url = url.split("?")[0]
+                if not url.endswith("/"):
+                    url += "/"
+                url += "video"
+                logger.info(f"Auto-appending /video to space URL: {url}")
+
             logger.info(f"Navigating to {url}...")
             await page.goto(url, wait_until="domcontentloaded")
             
@@ -90,19 +100,8 @@ class BrowserCrawler:
             seen = set()
             page_num = 1
             
-            # Auto-redirect to video list if on home page
-            if "/space.bilibili.com/" in url and "/video" not in url:
-                logger.info("On user home page, redirecting to video list...")
-                # Try to find "投稿" tab or just append /video
-                # But appending is safer.
-                if "?" in url:
-                    url = url.split("?")[0]
-                if not url.endswith("/"):
-                    url += "/"
-                url += "video"
-                logger.info(f"Redirecting to {url}")
-                await page.goto(url, wait_until="domcontentloaded")
-                await asyncio.sleep(3)
+            # Auto-redirect removed (handled at start)
+            pass
             
             while True:
                 logger.info(f"Scraping page {page_num}...")
