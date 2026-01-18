@@ -1,8 +1,10 @@
 import os
-import logging
+import shutil
+from typing import Optional
 from minio import Minio
 from minio.error import S3Error
-from typing import Optional
+from src.core.config import settings
+import logging
 
 logger = logging.getLogger(__name__)
 

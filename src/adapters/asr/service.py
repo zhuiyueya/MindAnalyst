@@ -1,10 +1,10 @@
 import os
+import httpx
 import logging
 import subprocess
+from typing import Optional, Dict, Any
 from openai import AsyncOpenAI
-import httpx
-
-from src.config.settings import settings
+from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 

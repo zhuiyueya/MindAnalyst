@@ -1,0 +1,14 @@
+
+version: "1.0"
+description: "RAG 重排"
+system: ""
+user: |
+  请针对查询语句，对以下段落进行相关性排序。
+  查询: {{ query }}
+  
+  段落列表:
+  {% for doc in documents %}
+  [{{ loop.index0 }}] {{ doc[:200] }}...
+  {% endfor %}
+  
+  请返回相关性最高的 {{ top_n }} 个段落的编号列表，格式如 JSON: {'indices': [0, 2, 1]}
