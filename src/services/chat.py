@@ -1,12 +1,11 @@
 import os
-from typing import List, Dict, Tuple
+from src.services.llm import LLMService
+from src.models.models import Segment, ContentItem, Summary
+from typing import List, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from sqlalchemy import text
-from src.models.models import Segment, ContentItem
 from sentence_transformers import SentenceTransformer
-import openai
-from src.config.settings import settings
+import os
 
 class ChatService:
     def __init__(self, session: AsyncSession):
@@ -17,45 +16,44 @@ class ChatService:
         else:
              self.embedder = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
         
-        if settings.OPENAI_API_KEY:
-            self.client = openai.AsyncOpenAI(
-                api_key=settings.OPENAI_API_KEY,
-                base_url=settings.OPENAI_BASE_URL
-            )
-        else:
-            self.client = None
+        self.llm = LLMService()
 
-    async def retrieve(self, query: str, author_id: str = None, top_k: int = 5) -> List[Segment]:
-        """Simple vector search"""
+    async def retrieve(self, query: str, author_id: str = None, top_k: int = 10) -> List[Segment]:
+        """
+        Two-stage retrieval:
+        1. Hybrid Search (Content-level Summary + Segment Vector)
+        2. Rerank
+        """
+        # 1. Vector Search on Segments (Recall)
         if self.embedder:
             query_vec = self.embedder.encode(query).tolist()
         else:
-            # Mock embedding vector
-            # Must match DB dimension (768)
-            query_vec = [0.1] * 768
+            query_vec = [0.1] * 384
             
-        # pgvector l2_distance or cosine_distance
-        # Note: SQLModel doesn't fully support pgvector syntax natively in select() yet easily,
-        # so we might use raw SQL or session.exec with specific order_by
-        
-        # Using l2_distance (<->) operator
-        # Join ContentItem to filter by author if needed
         stmt = select(Segment).join(ContentItem)
-        
         if author_id:
             stmt = stmt.where(ContentItem.author_id == author_id)
             
-        stmt = stmt.order_by(Segment.embedding.l2_distance(query_vec)).limit(top_k)
+        # Recall more candidates for reranking (e.g. 20)
+        stmt = stmt.order_by(Segment.embedding.l2_distance(query_vec)).limit(top_k * 2)
         result = await self.session.execute(stmt)
         segments = result.scalars().all()
         
-        # Manually fetch content to avoid lazy load error in async
+        # Load content info
         for seg in segments:
             stmt_c = select(ContentItem).where(ContentItem.id == seg.content_id)
             res_c = await self.session.execute(stmt_c)
             seg.content = res_c.scalar_one()
-            
-        return segments
+
+        if not segments:
+            return []
+
+        # 2. Rerank
+        doc_texts = [s.text for s in segments]
+        top_indices = await self.llm.rerank(query, doc_texts, top_n=top_k)
+        
+        reranked_segments = [segments[i] for i in top_indices]
+        return reranked_segments
 
     async def chat(self, query: str, author_id: str = None) -> Dict:
         """RAG Chat"""
@@ -70,24 +68,19 @@ class ChatService:
         citations = []
         
         for i, seg in enumerate(segments):
-            # Load content to get title/url if needed (lazy loading usually works if session active)
-            # For simplicity, we assume seg.content is loaded or we fetch it.
-            # We explicitly fetch content to be safe
-            # stmt = select(ContentItem).where(ContentItem.id == seg.content_id)
-            # res = await self.session.execute(stmt)
-            # content_item = res.scalar_one()
-            
             # Format: [i] Title (00:00): Text
             start_sec = seg.start_time_ms // 1000
             time_str = f"{start_sec//60:02d}:{start_sec%60:02d}"
+            title = seg.content.title if seg.content else "Unknown"
             
-            context_str += f"[{i+1}] 时间戳 {time_str}: {seg.text}\n\n"
+            context_str += f"[{i+1}] 《{title}》时间戳 {time_str}: {seg.text}\n\n"
             
             citations.append({
                 "index": i+1,
                 "segment_id": seg.id,
                 "text": seg.text,
                 "start_time": start_sec,
+                "title": title,
                 "url": f"https://www.bilibili.com/video/{seg.content.external_id}?t={start_sec}" if seg.content else ""
             })
             
@@ -100,12 +93,10 @@ class ChatService:
 """
         user_prompt = f"用户问题：{query}\n\n相关片段：\n{context_str}"
         
-        if self.client:
+        if self.llm.client:
             try:
-                response = await self.client.chat.completions.create(
-                    # model="gpt-3.5-turbo", 
-                    # Use a model likely available on SiliconFlow free/paid tier or standard
-                    model="Qwen/Qwen2.5-7B-Instruct", 
+                response = await self.llm.client.chat.completions.create(
+                    model=self.llm.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}

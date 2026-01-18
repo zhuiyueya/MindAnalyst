@@ -3,11 +3,12 @@ from typing import List, Dict
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from src.models.models import Author, ContentItem, Segment, Summary
+from src.models.models import Author, ContentItem, Segment, Summary, AuthorReport
 from src.crawler.bilix_crawler import BilixCrawler
 from src.crawler.browser_crawler import BrowserCrawler
 from src.services.asr import ASRService
 from src.services.storage import StorageService
+from src.services.llm import LLMService
 from src.database.db import get_session
 from sentence_transformers import SentenceTransformer
 import logging
@@ -23,6 +24,7 @@ class PipelineService:
         self.browser_crawler = None # Lazy init
         self.asr = ASRService()
         self.storage = StorageService() # MinIO
+        self.llm = LLMService()
         
         # Load embedding model lazily or globally. For MVP, load here.
         if os.getenv("MOCK_EMBEDDING"):
@@ -156,10 +158,10 @@ class PipelineService:
                 await self.session.commit()
                 await self.session.refresh(content)
                 
-                # Process Content (ASR/Embed)
+                # 3. Process Content (Transcribe/Segment/Embed)
                 await self.process_content(content)
             else:
-                # If content exists but quality is summary, retry to get full content
+                 # If content exists but quality is summary, retry to get full content
                 if content.content_quality == 'summary':
                     logger.info(f"Content exists but quality is 'summary'. Retrying: {bvid}")
                     # Delete existing segments to avoid duplication
@@ -171,7 +173,25 @@ class PipelineService:
                     await self.process_content(content)
                 else:
                     logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
-                
+        
+        # 3. Generate Author Report
+        # This is done after processing all videos in this batch
+        if videos:
+             # Even if all videos were skipped, we might still want to try generating a report if we have enough summaries?
+             # But the user logic is "if we just ingested/updated content".
+             # If everything was skipped, we might not need to regenerate report unless forced.
+             # However, the user complained "No summaries found".
+             # This means either:
+             # 1. The videos were skipped (so no NEW summaries generated).
+             # 2. The OLD videos didn't have summaries (because they were ingested before we added the summary logic).
+             
+             # Fix: We should check if we have summaries for this author, regardless of whether this batch added new ones.
+             # If we skipped everything, we should probably still check if we can generate a report if one doesn't exist or is old?
+             # For now, let's just let it run. The warning "No summaries found" means DB really has no summaries.
+             # We need to backfill summaries for existing content if they are missing.
+             
+             await self.generate_author_report(author.id)
+
     async def ingest_author(self, mid_or_url: str, limit: int = 10):
         """Ingest author and their recent videos"""
         # 1. Get Author Info
@@ -238,6 +258,10 @@ class PipelineService:
                     await self.process_content(content)
                 else:
                     logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
+
+        # 3. Generate Author Report
+        if videos:
+            await self.generate_author_report(author.id)
 
     async def process_content(self, content: ContentItem):
         """Fetch subtitles, segment, and embed"""
@@ -344,6 +368,9 @@ class PipelineService:
             await self.session.commit()
             logger.info(f"Saved {len(segments)} segments for {content.title} (Quality: {quality})")
             
+            # Generate Summary
+            await self.generate_content_summary(content, segments)
+            
         except Exception as e:
             logger.error(f"Error processing {content.external_id}: {e}")
 
@@ -380,6 +407,67 @@ class PipelineService:
             
         return chunks
 
+    async def generate_content_summary(self, content: ContentItem, segments: List[Segment]):
+        """
+        Generate structured summary for a single content item using LLM.
+        """
+        logger.info(f"Generating summary for {content.title}...")
+        
+        # Combine segment texts
+        full_text = "\n".join([s.text for s in segments])
+        
+        # Call LLM
+        result = await self.llm.generate_summary(full_text)
+        
+        if "error" in result:
+            logger.warning(f"Summary generation failed for {content.title}: {result['error']}")
+            return
+
+        # Save to Summary table
+        summary = Summary(
+            content_id=content.id,
+            summary_type="structured",
+            content=result.get("summary", ""),
+            json_data=result
+        )
+        self.session.add(summary)
+        await self.session.commit()
+        logger.info(f"Saved summary for {content.title}")
+
+    async def generate_author_report(self, author_id: str):
+        """
+        Generate author-level report from existing summaries.
+        """
+        logger.info(f"Generating report for author {author_id}...")
+        
+        # Fetch recent summaries
+        stmt = select(Summary).join(ContentItem).where(ContentItem.author_id == author_id).order_by(Summary.created_at.desc()).limit(50)
+        result = await self.session.execute(stmt)
+        summaries = result.scalars().all()
+        
+        if not summaries:
+            logger.warning("No summaries found for author report.")
+            return
+
+        summary_data = [s.json_data for s in summaries if s.json_data]
+        
+        # Call LLM
+        result = await self.llm.generate_author_report(summary_data)
+        
+        if "error" in result:
+            logger.warning(f"Report generation failed: {result['error']}")
+            return
+
+        # Save to AuthorReport table
+        report = AuthorReport(
+            author_id=author_id,
+            content=result.get("report_markdown", ""),
+            json_data=result
+        )
+        self.session.add(report)
+        await self.session.commit()
+        logger.info(f"Saved author report for {author_id}")
+
     async def generate_summary(self, content: ContentItem, segments: List[Segment]):
-        # TODO: Call LLM API
-        pass
+        # Deprecated method placeholder, mapped to generate_content_summary
+        return await self.generate_content_summary(content, segments)

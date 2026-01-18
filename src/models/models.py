@@ -18,6 +18,7 @@ class Author(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     contents: List["ContentItem"] = Relationship(back_populates="author")
+    reports: List["AuthorReport"] = Relationship(back_populates="author")
 
 class ContentItem(SQLModel, table=True):
     id: str = Field(default_factory=generate_uuid, primary_key=True)
@@ -58,3 +59,18 @@ class Summary(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     content_item: ContentItem = Relationship(back_populates="summaries")
+
+class AuthorReport(SQLModel, table=True):
+    id: str = Field(default_factory=generate_uuid, primary_key=True)
+    author_id: str = Field(foreign_key="author.id")
+    report_version: str = Field(default="v1")
+    content: str # The full markdown report
+    json_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON)) # Structured data (key points, clusters)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    author: Author = Relationship(back_populates="reports")
+
+# Update Author to include reports relationship
+# We need to do this carefully since Author is defined above.
+# SQLModel resolves string forward references, but we need to ensure Author has the field.
+
