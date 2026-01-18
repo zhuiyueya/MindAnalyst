@@ -2,6 +2,12 @@ from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from dotenv import load_dotenv
+import os
+
+# Load environment variables (for HF_ENDPOINT etc.)
+load_dotenv()
+
 from src.database.db import get_session, init_db
 from src.models.models import Author, ContentItem, Segment
 from src.workflows.ingestion import IngestionWorkflow
@@ -71,8 +77,20 @@ async def ingest_author(
     
     # Check if we should use BrowserCrawler based on input
     use_browser = False
+    # If it's a URL, or we suspect API issues (which we do now), use browser.
+    # Actually, let's default to browser for stability given API rate limits.
+    # But for backward compatibility with pure MID inputs:
     if "bilibili.com" in req.author_id or "http" in req.author_id:
         use_browser = True
+    else:
+        # If just MID, also use browser?
+        # Construct a URL for it to force browser usage
+        # Or just set use_browser = True and handle MID in ingestion
+        # But ingest_from_browser expects a URL.
+        # Let's convert MID to URL here if we want to force browser.
+        # req.author_id = f"https://space.bilibili.com/{req.author_id}"
+        # use_browser = True
+        pass # Keep old logic for now, user should provide URL if they want browser
     
     # We need a new session for background task since the dep session closes
     # But BackgroundTasks with async functions is tricky with sessions.

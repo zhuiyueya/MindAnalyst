@@ -9,22 +9,28 @@ logger = logging.getLogger(__name__)
 
 class BrowserCrawler:
     """
-    Crawler that connects to an existing local Chrome instance to bypass anti-crawler protections.
-    Requires Chrome to be started with: --remote-debugging-port=9222
+    Crawler that launches a new Chromium instance or connects to an existing one.
+    Defaults to launching a new headful browser for stability.
     """
-    def __init__(self, cdp_url: str = "http://localhost:9222"):
-        self.cdp_url = cdp_url
+    def __init__(self, headless: bool = False):
         self.browser: Optional[Browser] = None
+        self.playwright = None
+        self.headless = headless
         
     async def connect(self):
-        """Connect to local browser"""
+        """Launch a new browser instance"""
         try:
-            p = await async_playwright().start()
-            self.browser = await p.chromium.connect_over_cdp(self.cdp_url)
-            logger.info(f"Connected to browser at {self.cdp_url}")
+            self.playwright = await async_playwright().start()
+            # Launch new browser instead of connecting to existing CDP
+            # This avoids local Chrome state corruption issues
+            self.browser = await self.playwright.chromium.launch(
+                headless=self.headless,
+                args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
+            )
+            logger.info(f"Launched new browser (headless={self.headless})")
         except Exception as e:
-            logger.error(f"Failed to connect to browser: {e}")
-            raise ConnectionError(f"Could not connect to Chrome at {self.cdp_url}. Make sure it is running with --remote-debugging-port=9222")
+            logger.error(f"Failed to launch browser: {e}")
+            raise
 
     async def get_videos_from_page(self, url: str, limit: int = 0) -> Dict:
         """
@@ -36,7 +42,12 @@ class BrowserCrawler:
         if not self.browser:
             await self.connect()
             
-        context = self.browser.contexts[0]
+        # Handle context creation for launch() mode
+        if not self.browser.contexts:
+            context = await self.browser.new_context()
+        else:
+            context = self.browser.contexts[0]
+            
         page = await context.new_page()
         
         result = {"author": None, "videos": []}
@@ -51,8 +62,8 @@ class BrowserCrawler:
             # 1. Try to extract Author Info (if on Space page)
             try:
                 # Try multiple selectors for author name
-                author_name_el = await page.query_selector("#h-name") or await page.query_selector(".nickname")
-                author_face_el = await page.query_selector("#h-avatar") or await page.query_selector(".h-avatar img")
+                author_name_el = await page.query_selector("#h-name") or await page.query_selector(".nickname") or await page.query_selector(".h-name")
+                author_face_el = await page.query_selector("#h-avatar") or await page.query_selector(".h-avatar img") or await page.query_selector(".h-avatar")
                 
                 if author_name_el:
                     name = await author_name_el.inner_text()
@@ -78,6 +89,20 @@ class BrowserCrawler:
             videos = []
             seen = set()
             page_num = 1
+            
+            # Auto-redirect to video list if on home page
+            if "/space.bilibili.com/" in url and "/video" not in url:
+                logger.info("On user home page, redirecting to video list...")
+                # Try to find "投稿" tab or just append /video
+                # But appending is safer.
+                if "?" in url:
+                    url = url.split("?")[0]
+                if not url.endswith("/"):
+                    url += "/"
+                url += "video"
+                logger.info(f"Redirecting to {url}")
+                await page.goto(url, wait_until="domcontentloaded")
+                await asyncio.sleep(3)
             
             while True:
                 logger.info(f"Scraping page {page_num}...")
@@ -135,12 +160,18 @@ class BrowserCrawler:
                         link_el = el
                         title = await el.get_attribute("title") or await el.inner_text()
 
-                    # Check for Charging Tag
-                    charge_tag = await el.query_selector(".charge-tag")
-                    if charge_tag:
-                        txt = await charge_tag.inner_text()
-                        if "充电" in txt:
-                            continue
+                    # Check for Charging Tag (Exclude premium videos)
+                    # Need to check inside 'el' if it's a container
+                    if tag_name != "A":
+                        charge_tag = await el.query_selector(".charge-tag")
+                        if charge_tag:
+                            txt = await charge_tag.inner_text()
+                            if "充电" in txt:
+                                continue
+                        
+                    # Exclude if title contains charging keywords
+                    if title and "充电专属" in title:
+                        continue
 
                     # Finalize Video Object
                     if not link_el:
@@ -203,7 +234,7 @@ class BrowserCrawler:
                 else:
                     logger.info("No next page or reached end.")
                     break
-            
+        
             result["videos"] = videos
             logger.info(f"Found {len(videos)} videos on page.")
             
@@ -215,5 +246,7 @@ class BrowserCrawler:
         return result
 
     async def close(self):
-        # We don't close the browser itself as it's the user's local instance
-        pass
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()

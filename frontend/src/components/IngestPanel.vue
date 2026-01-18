@@ -17,7 +17,7 @@ const handleIngest = async () => {
   
   try {
     const res = await axios.post('/api/v1/ingest', {
-      mid: mid.value.trim(),
+      author_id: mid.value.trim(),
       limit: limit.value
     })
     message.value = `Success: ${res.data.message}. Task ID: ${res.data.task_id}`

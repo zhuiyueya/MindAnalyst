@@ -40,11 +40,24 @@ class IngestionWorkflow:
         Use BrowserCrawler to get videos from a page (e.g. Space) and ingest them.
         limit: Max videos to process.
         """
+        # Always launch browser in headless=False mode for debugging if needed, 
+        # or True if you want it background.
+        # But wait, BrowserCrawler defaults to headless=False in our new code.
         if not self.browser_crawler:
-            self.browser_crawler = BrowserCrawler()
+            self.browser_crawler = BrowserCrawler(headless=False)
             
-        # 1. Scrape Videos
-        result = await self.browser_crawler.get_videos_from_page(url, limit=limit)
+        try:
+            # 1. Scrape Videos
+            result = await self.browser_crawler.get_videos_from_page(url, limit=limit)
+        except Exception as e:
+            logger.error(f"Browser crawler failed: {e}")
+            return
+        finally:
+            # Close browser when done
+            if self.browser_crawler:
+                await self.browser_crawler.close()
+                self.browser_crawler = None
+
         videos = result.get("videos", [])
         author_data = result.get("author", None)
         
@@ -63,14 +76,25 @@ class IngestionWorkflow:
             # If we didn't scrape author info (e.g. not on Space page), try fallback
             if not author_data or not mid:
                 logger.info(f"Fetching author info for BVID: {first_vid['bvid']}")
-                bilix_author = await self.crawler.get_author_info(first_vid['bvid'])
-                mid = str(bilix_author["mid"])
-                author_data = {
-                    "mid": mid,
-                    "name": bilix_author["name"],
-                    "face": bilix_author["face"],
-                    "url": f"https://space.bilibili.com/{mid}"
-                }
+                # Add try-except for bilix call
+                try:
+                    bilix_author = await self.crawler.get_author_info(first_vid['bvid'])
+                    mid = str(bilix_author["mid"])
+                    author_data = {
+                        "mid": mid,
+                        "name": bilix_author["name"],
+                        "face": bilix_author["face"],
+                        "url": f"https://space.bilibili.com/{mid}"
+                    }
+                except Exception as bilix_e:
+                    logger.warning(f"Bilix fallback failed: {bilix_e}")
+                    # Keep mid as "0" if failed
+                    author_data = {
+                        "mid": "0",
+                        "name": "Unknown Author",
+                        "face": "",
+                        "url": ""
+                    }
 
             # Create/Get Author
             stmt = select(Author).where(Author.external_id == mid)
@@ -288,13 +312,13 @@ class IngestionWorkflow:
                         segments = res_seg.scalars().all()
                         
                         if segments:
-                            # Pass existing summary to update it if segments:
-                            await self.analysis.generate_content_summary(content, segments)
+                            # Pass existing summary to update it if present
+                            await self.analysis.generate_content_summary(content, segments, existing_summary=existing_summary)
                         else:
                             logger.warning(f"Content {bvid} has 'full' quality but no segments found. Skipping summary.")
                     else:
                         logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
-
+        
         # 3. Generate Author Report
         if videos:
             await self.analysis.generate_author_report(author.id)
@@ -381,9 +405,10 @@ class IngestionWorkflow:
             self.session.add(content)
 
             # Chunking Strategy
-            segments = self._create_chunks(subtitles)
+            chunks = self._create_chunks(subtitles)
             
-            for i, chunk in enumerate(segments):
+            saved_segments = []
+            for i, chunk in enumerate(chunks):
                 text_content = chunk["text"]
                 # Embedding
                 if self.embedder:
@@ -400,12 +425,13 @@ class IngestionWorkflow:
                     embedding=vector
                 )
                 self.session.add(segment)
+                saved_segments.append(segment)
             
             await self.session.commit()
-            logger.info(f"Saved {len(segments)} segments for {content.title} (Quality: {quality})")
+            logger.info(f"Saved {len(saved_segments)} segments for {content.title} (Quality: {quality})")
             
             # Generate Summary
-            await self.analysis.generate_content_summary(content, segments)
+            await self.analysis.generate_content_summary(content, saved_segments)
             
         except Exception as e:
             logger.error(f"Error processing {content.external_id}: {e}")

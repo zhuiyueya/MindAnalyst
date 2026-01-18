@@ -53,25 +53,26 @@ class BilixCrawler:
                 # Normal Author Logic
                 # bilix get_up_info signature: (client, url_or_mid)
                 # Try to extract MID if it's a URL
+                mid = url_or_mid
                 if "space.bilibili.com" in url_or_mid:
-                    url_or_mid = url_or_mid.split("space.bilibili.com/")[-1].split("/")[0].split("?")[0]
+                    mid = url_or_mid.split("space.bilibili.com/")[-1].split("/")[0].split("?")[0]
                 
-                info = await api.get_up_info(client, url_or_mid)
+                info = await api.get_up_info(client, mid)
                 logger.info(f"Bilix get_up_info result: {info}")
                 
                 # Handle if info is dict or object
                 if isinstance(info, dict):
                     return {
-                        "name": info.get("name"),
-                        "face": info.get("face"),
-                        "mid": info.get("mid"),
+                        "name": info.get("name", "Unknown Author"),
+                        "face": info.get("face", ""),
+                        "mid": str(info.get("mid", mid)),
                         "desc": info.get("desc", "") or info.get("sign", "")
                     }
                 else:
                     return {
-                        "name": info.name,
-                        "face": info.face,
-                        "mid": info.mid,
+                        "name": getattr(info, "name", "Unknown Author"),
+                        "face": getattr(info, "face", ""),
+                        "mid": str(getattr(info, "mid", mid)),
                         "desc": getattr(info, "desc", "") or getattr(info, "sign", "")
                     }
             except Exception as e:
@@ -116,43 +117,26 @@ class BilixCrawler:
         async with httpx.AsyncClient(headers=self.headers) as client:
             while True:
                 try:
-                    # bilix api signature: get_up_video_info(client, url_or_mid, pn, ps, ...)
-                    # It returns a list of VideoInfo or similar? 
-                    # Let's verify return type. It usually returns list of dict or objects.
-                    # Based on research_bilix_2.py, it likely returns list.
-                    
-                    # Note: get_up_video_info returns (video_list, total) tuple or just list?
-                    # I need to be careful. Let's assume it returns a list based on name.
-                    # Wait, usually these APIs return a response object or list.
-                    # Let's try to call it in research script if unsure, but I'll assume list for now 
-                    # and catch exception if structure is different.
-                    
-                    # Actually, bilix `get_up_video_info` returns `List[VideoInfo]`.
-                    
                     batch = await api.get_up_video_info(client, url_or_mid, pn=page, ps=page_size)
-                    
-                    if not batch:
-                        break
-                        
-                    for v in batch:
-                        videos.append({
-                            "bvid": v.bvid,
-                            "title": v.title,
-                            "created": v.pub_date, # check if it's timestamp or string
-                            "length": v.duration, # check format
-                            "pic": v.cover
-                        })
-                        if 0 < limit <= len(videos):
-                            return videos[:limit]
-                    
-                    page += 1
-                    
-                    # Safety break if limit is 0 (all) but too many pages?
-                    # For now just continue until empty.
-                    
                 except Exception as e:
-                    logger.error(f"Error fetching videos page {page}: {e}")
+                    logger.warning(f"Failed to fetch videos via API for {url_or_mid}: {e}")
                     break
+                
+                if not batch:
+                    break
+                    
+                for v in batch:
+                    videos.append({
+                        "bvid": v.bvid,
+                        "title": v.title,
+                        "created": v.pub_date,
+                        "length": v.duration,
+                        "pic": v.cover
+                    })
+                    if 0 < limit <= len(videos):
+                        return videos[:limit]
+                
+                page += 1
                     
         return videos
 
