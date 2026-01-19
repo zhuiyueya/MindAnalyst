@@ -3,12 +3,11 @@ from typing import List, Dict
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from src.models.models import Author, ContentItem, Segment, Summary, AuthorReport
+from src.models.models import Author, ContentItem, Segment
 from src.adapters.sources.bilibili.bilix import BilixCrawler
 from src.adapters.sources.bilibili.browser import BrowserCrawler
 from src.adapters.asr.service import ASRService
 from src.adapters.storage.service import StorageService
-from src.workflows.analysis import AnalysisWorkflow
 from src.database.db import get_session
 from sentence_transformers import SentenceTransformer
 import logging
@@ -22,7 +21,6 @@ class IngestionWorkflow:
         self.browser_crawler = None # Lazy init
         self.asr = ASRService()
         self.storage = StorageService() # MinIO
-        self.analysis = AnalysisWorkflow(session)
         
         # Load embedding model lazily or globally. For MVP, load here.
         if os.getenv("MOCK_EMBEDDING"):
@@ -194,44 +192,9 @@ class IngestionWorkflow:
                     
                     await self.process_content(content)
                 else:
-                    # Content exists and is 'full' quality.
-                    # Check if summary exists and is valid.
-                    stmt_sum = select(Summary).where(Summary.content_id == content.id)
-                    res_sum = await self.session.execute(stmt_sum)
-                    existing_summary = res_sum.scalar_one_or_none()
-                    
-                    if not existing_summary or not existing_summary.content:
-                        logger.info(f"Content {bvid} exists but missing summary. Generating summary...")
-                        # Fetch segments
-                        stmt_seg = select(Segment).where(Segment.content_id == content.id).order_by(Segment.segment_index)
-                        res_seg = await self.session.execute(stmt_seg)
-                        segments = res_seg.scalars().all()
-                        
-                        if segments:
-                            # Pass existing summary to update it if present
-                            await self.analysis.generate_content_summary(content, segments, existing_summary=existing_summary)
-                        else:
-                            logger.warning(f"Content {bvid} has 'full' quality but no segments found. Skipping summary.")
-                    else:
-                        logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
+                    logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
         
-        # 3. Generate Author Report
-        # This is done after processing all videos in this batch
-        if videos:
-             # Even if all videos were skipped, we might still want to try generating a report if we have enough summaries?
-             # But the user logic is "if we just ingested/updated content".
-             # If everything was skipped, we might not need to regenerate report unless forced.
-             # However, the user complained "No summaries found".
-             # This means either:
-             # 1. The videos were skipped (so no NEW summaries generated).
-             # 2. The OLD videos didn't have summaries (because they were ingested before we added the summary logic).
-             
-             # Fix: We should check if we have summaries for this author, regardless of whether this batch added new ones.
-             # If we skipped everything, we should probably still check if we can generate a report if one doesn't exist or is old?
-             # For now, let's just let it run. The warning "No summaries found" means DB really has no summaries.
-             # We need to backfill summaries for existing content if they are missing.
-             
-             await self.analysis.generate_author_report(author.id)
+        # NOTE: Author report generation is now manual.
 
     async def ingest_author(self, mid_or_url: str, limit: int = 10):
         """Ingest author and their recent videos"""
@@ -298,30 +261,9 @@ class IngestionWorkflow:
                     
                     await self.process_content(content)
                 else:
-                    # Content exists and is 'full' quality.
-                    # Check if summary exists and is valid.
-                    stmt_sum = select(Summary).where(Summary.content_id == content.id)
-                    res_sum = await self.session.execute(stmt_sum)
-                    existing_summary = res_sum.scalar_one_or_none()
-                    
-                    if not existing_summary or not existing_summary.content:
-                        logger.info(f"Content {bvid} exists but missing summary. Generating summary...")
-                        # Fetch segments
-                        stmt_seg = select(Segment).where(Segment.content_id == content.id).order_by(Segment.segment_index)
-                        res_seg = await self.session.execute(stmt_seg)
-                        segments = res_seg.scalars().all()
-                        
-                        if segments:
-                            # Pass existing summary to update it if present
-                            await self.analysis.generate_content_summary(content, segments, existing_summary=existing_summary)
-                        else:
-                            logger.warning(f"Content {bvid} has 'full' quality but no segments found. Skipping summary.")
-                    else:
-                        logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
+                    logger.info(f"Content already exists (quality={content.content_quality}): {bvid} - {v['title']}, skipping.")
         
-        # 3. Generate Author Report
-        if videos:
-            await self.analysis.generate_author_report(author.id)
+        # NOTE: Author report generation is now manual.
 
     async def process_content(self, content: ContentItem):
         """Fetch subtitles, segment, and embed"""
@@ -430,8 +372,7 @@ class IngestionWorkflow:
             await self.session.commit()
             logger.info(f"Saved {len(saved_segments)} segments for {content.title} (Quality: {quality})")
             
-            # Generate Summary
-            await self.analysis.generate_content_summary(content, saved_segments)
+            # NOTE: Summary generation is now manual.
             
         except Exception as e:
             logger.error(f"Error processing {content.external_id}: {e}")
