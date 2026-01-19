@@ -21,6 +21,9 @@ export default {
   regenerateReport(id) {
     return apiClient.post(`/authors/${id}/regenerate_report`);
   },
+  setAuthorType(id, data) {
+    return apiClient.post(`/authors/${id}/set_type`, data);
+  },
   resummarizeAll(id) {
     return apiClient.post(`/authors/${id}/resummarize_all`);
   },
@@ -34,6 +37,9 @@ export default {
   },
   resummarizeVideo(id) {
     return apiClient.post(`/videos/${id}/resummarize`);
+  },
+  setVideoType(id, data) {
+    return apiClient.post(`/videos/${id}/set_type`, data);
   },
 
   // Ingest & Chat

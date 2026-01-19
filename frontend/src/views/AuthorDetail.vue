@@ -9,6 +9,9 @@ const md = new MarkdownIt()
 
 const author = ref(null)
 const report = ref(null)
+const reportsByType = ref({})
+const selectedReportType = ref('')
+const selectedAuthorType = ref('')
 const videos = ref([])
 const loading = ref(true)
 const activeTab = ref('report')
@@ -25,6 +28,14 @@ const fetchData = async () => {
     
     author.value = authRes.data.author
     report.value = authRes.data.latest_report
+    reportsByType.value = authRes.data.reports_by_type || {}
+    selectedAuthorType.value = author.value?.author_type || ''
+    if (selectedAuthorType.value && reportsByType.value[selectedAuthorType.value]) {
+      selectedReportType.value = selectedAuthorType.value
+    } else {
+      const types = Object.keys(reportsByType.value)
+      selectedReportType.value = types.length ? types[0] : ''
+    }
     videos.value = vidRes.data
   } catch (e) {
     console.error(e)
@@ -35,10 +46,31 @@ const fetchData = async () => {
 
 onMounted(fetchData)
 
-const renderReport = computed(() => {
-  if (!report.value || !report.value.content) return 'No report generated yet.'
-  return md.render(report.value.content)
+const activeReport = computed(() => {
+  if (selectedReportType.value && reportsByType.value[selectedReportType.value]) {
+    return reportsByType.value[selectedReportType.value][0]
+  }
+  return report.value
 })
+
+const reportTypes = computed(() => Object.keys(reportsByType.value || {}))
+
+const renderReport = computed(() => {
+  if (!activeReport.value || !activeReport.value.content) return 'No report generated yet.'
+  return md.render(activeReport.value.content)
+})
+
+const saveAuthorType = async () => {
+  processing.value = true
+  try {
+    await api.setAuthorType(authorId, { author_type: selectedAuthorType.value || null })
+    await fetchData()
+  } catch (e) {
+    alert('Failed: ' + e.message)
+  } finally {
+    processing.value = false
+  }
+}
 
 const triggerRegenerateReport = async () => {
   if (!confirm('Regenerate author report? This may take a while.')) return
@@ -85,7 +117,22 @@ const triggerResummarizeAll = async () => {
               {{ author.homepage_url }}
             </a>
           </p>
-          <div class="mt-4 flex space-x-3">
+          <div class="mt-4 flex flex-wrap items-center gap-3">
+            <div class="flex items-center space-x-2">
+              <label class="text-sm text-gray-600">Author Type</label>
+              <input
+                v-model="selectedAuthorType"
+                placeholder="e.g. insight / howto"
+                class="border rounded px-2 py-1 text-sm"
+              />
+              <button
+                @click="saveAuthorType"
+                :disabled="processing"
+                class="px-3 py-1 bg-gray-900 text-white rounded text-xs"
+              >
+                Save
+              </button>
+            </div>
             <button 
               @click="triggerRegenerateReport"
               :disabled="processing"
@@ -124,8 +171,19 @@ const triggerResummarizeAll = async () => {
     </div>
 
     <!-- Content -->
-    <div v-if="activeTab === 'report'" class="bg-white shadow rounded-lg p-6 prose max-w-none">
-      <div v-html="renderReport"></div>
+    <div v-if="activeTab === 'report'" class="bg-white shadow rounded-lg p-6">
+      <div v-if="reportTypes.length" class="mb-4 flex flex-wrap items-center gap-2">
+        <span class="text-sm text-gray-600">Report Type:</span>
+        <button
+          v-for="type in reportTypes"
+          :key="type"
+          @click="selectedReportType = type"
+          :class="[selectedReportType === type ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700', 'px-3 py-1 rounded text-xs']"
+        >
+          {{ type }}
+        </button>
+      </div>
+      <div class="prose max-w-none" v-html="renderReport"></div>
     </div>
 
     <div v-else-if="activeTab === 'videos'" class="bg-white shadow rounded-lg overflow-hidden">
@@ -139,6 +197,7 @@ const triggerResummarizeAll = async () => {
               <p class="text-sm text-gray-500 mt-1">
                 Published: {{ new Date(video.published_at).toLocaleDateString() }} | 
                 Type: {{ video.type }} | 
+                Content Type: {{ video.content_type || 'generic' }} | 
                 Status: <span :class="video.has_summary ? 'text-green-600' : 'text-yellow-600'">{{ video.has_summary ? 'Summarized' : 'Pending' }}</span>
               </p>
             </div>

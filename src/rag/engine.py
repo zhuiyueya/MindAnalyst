@@ -1,7 +1,6 @@
 import os
 from src.adapters.llm.service import LLMService
 from src.models.models import Segment, ContentItem, Summary
-from src.prompts.manager import PromptManager
 from src.rag.retrieval import RetrievalService
 from src.rag.rerank import RerankService
 from typing import List, Dict
@@ -16,7 +15,12 @@ class RAGEngine:
         self.retrieval = RetrievalService(session)
         self.reranker = RerankService()
         self.llm = LLMService()
-        self.prompt_manager = PromptManager()
+
+    def _resolve_content_type(self, segments: List[Segment]) -> str:
+        for seg in segments:
+            if seg.content and seg.content.content_type:
+                return seg.content.content_type
+        return "generic"
 
     async def retrieve(self, query: str, author_id: str = None, top_k: int = 10) -> List[Segment]:
         """
@@ -32,7 +36,8 @@ class RAGEngine:
             return []
 
         # 2. Rerank
-        reranked_segments = await self.reranker.rerank(query, candidates, top_k=top_k)
+        content_type = self._resolve_content_type(candidates)
+        reranked_segments = await self.reranker.rerank(query, candidates, top_k=top_k, content_type=content_type)
         return reranked_segments
 
     async def chat(self, query: str, author_id: str = None) -> Dict:
@@ -64,23 +69,10 @@ class RAGEngine:
                 "url": f"https://www.bilibili.com/video/{seg.content.external_id}?t={start_sec}" if seg.content else ""
             })
             
+        content_type = self._resolve_content_type(segments)
+
         # 3. Generate Answer
-        prompts = self.prompt_manager.get_prompt("rag_chat/answer_v1", query=query, context_str=context_str)
-        
-        if self.llm.client:
-            try:
-                response = await self.llm.client.chat.completions.create(
-                    model=self.llm.model,
-                    messages=[
-                        {"role": "system", "content": prompts["system"]},
-                        {"role": "user", "content": prompts["user"]}
-                    ]
-                )
-                answer = response.choices[0].message.content
-            except Exception as e:
-                answer = f"Error calling LLM: {e}"
-        else:
-            answer = f"【模拟回答】基于片段 [1]，作者提到了相关概念。\n(请配置 OPENAI_API_KEY 以启用真实 LLM 回答)"
+        answer = await self.llm.generate_rag_answer(query, context_str, content_type)
 
         return {
             "answer": answer,

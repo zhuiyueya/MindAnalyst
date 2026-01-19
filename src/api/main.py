@@ -50,6 +50,12 @@ class IngestRequest(BaseModel):
 class ChatRequest(BaseModel):
     query: str
     author_id: Optional[str] = None
+
+class AuthorTypeRequest(BaseModel):
+    author_type: Optional[str] = None
+
+class ContentTypeRequest(BaseModel):
+    content_type: Optional[str] = None
     
 class ChatResponse(BaseModel):
     answer: str
@@ -72,14 +78,21 @@ async def get_author(author_id: str, session: AsyncSession = Depends(get_session
     if not author:
         raise HTTPException(status_code=404, detail="Author not found")
     
-    # Fetch latest report
-    stmt = select(AuthorReport).where(AuthorReport.author_id == author_id).order_by(AuthorReport.created_at.desc()).limit(1)
+    stmt = select(AuthorReport).where(AuthorReport.author_id == author_id).order_by(AuthorReport.created_at.desc())
     result = await session.execute(stmt)
-    report = result.scalar_one_or_none()
-    
+    reports = result.scalars().all()
+    reports_data = [report.model_dump() for report in reports]
+    reports_by_type: Dict[str, List[Dict[str, Any]]] = {}
+    for report in reports_data:
+        key = report.get("content_type") or "generic"
+        reports_by_type.setdefault(key, []).append(report)
+    latest_report = reports_data[0] if reports_data else None
+
     return {
         "author": author,
-        "latest_report": report
+        "latest_report": latest_report,
+        "reports": reports_data,
+        "reports_by_type": reports_by_type
     }
 
 @app.get("/api/v1/authors/{author_id}/videos")
@@ -134,6 +147,63 @@ async def get_video_detail(video_id: str, session: AsyncSession = Depends(get_se
         "summary": summary.model_dump() if summary else None,
         "segments": [s.model_dump(exclude={"embedding"}) for s in segments],
     }
+
+@app.post("/api/v1/authors/{author_id}/set_type")
+async def set_author_type(
+    author_id: str,
+    req: AuthorTypeRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+
+    author_type = req.author_type.strip() if req.author_type else None
+    author.author_type = author_type or None
+    author.author_type_source = "user" if author_type else None
+    session.add(author)
+
+    stmt = select(ContentItem).where(ContentItem.author_id == author_id)
+    result = await session.execute(stmt)
+    contents = result.scalars().all()
+    for content in contents:
+        if author_type:
+            content.content_type = author_type
+            content.content_type_source = "author_inherit"
+        elif content.content_type_source == "author_inherit":
+            content.content_type = None
+            content.content_type_source = None
+        session.add(content)
+
+    await session.commit()
+    return {"author_id": author_id, "author_type": author.author_type}
+
+@app.post("/api/v1/videos/{video_id}/set_type")
+async def set_video_type(
+    video_id: str,
+    req: ContentTypeRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    video = await session.get(ContentItem, video_id)
+    if not video:
+        stmt = select(ContentItem).where(ContentItem.external_id == video_id)
+        result = await session.execute(stmt)
+        video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    if video.author_id:
+        author = await session.get(Author, video.author_id)
+        if author and author.author_type:
+            raise HTTPException(status_code=400, detail="Author type set; clear author type before overriding video type")
+
+    content_type = req.content_type.strip() if req.content_type else None
+    video.content_type = content_type or None
+    video.content_type_source = "user" if content_type else None
+    session.add(video)
+    await session.commit()
+    await session.refresh(video)
+    return {"video": video.model_dump()}
 
 @app.get("/api/v1/videos/{video_id}/playback")
 async def get_video_playback_url(video_id: str, session: AsyncSession = Depends(get_session)):

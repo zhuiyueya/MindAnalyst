@@ -12,6 +12,7 @@ const segments = ref([])
 const playbackUrl = ref('')
 const loading = ref(true)
 const processing = ref(false)
+const selectedContentType = ref('')
 
 const summaryNormalized = computed(() => {
   if (!summary.value || !summary.value.json_data) return null
@@ -24,6 +25,7 @@ const fetchData = async () => {
     video.value = res.data.video
     summary.value = res.data.summary
     segments.value = res.data.segments
+    selectedContentType.value = video.value?.content_type || ''
     
     // Try to get playback url
     try {
@@ -37,6 +39,18 @@ const fetchData = async () => {
     console.error(e)
   } finally {
     loading.value = false
+  }
+}
+
+const saveContentType = async () => {
+  processing.value = true
+  try {
+    await api.setVideoType(videoId, { content_type: selectedContentType.value || null })
+    await fetchData()
+  } catch (e) {
+    alert('Failed: ' + e.message)
+  } finally {
+    processing.value = false
   }
 }
 
@@ -72,9 +86,25 @@ const formatTime = (ms) => {
       <div class="mt-2 flex items-center space-x-4 text-sm text-gray-500">
         <span>{{ new Date(video.published_at).toLocaleDateString() }}</span>
         <span>Quality: {{ video.content_quality }}</span>
+        <span>Content Type: {{ video.content_type || 'generic' }}</span>
         <a :href="video.url" target="_blank" class="text-indigo-600 hover:underline">Original Link</a>
       </div>
-      <div class="mt-4">
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <div class="flex items-center space-x-2">
+          <label class="text-sm text-gray-600">Content Type</label>
+          <input
+            v-model="selectedContentType"
+            placeholder="e.g. insight / howto"
+            class="border rounded px-2 py-1 text-sm"
+          />
+          <button
+            @click="saveContentType"
+            :disabled="processing"
+            class="px-3 py-1 bg-gray-900 text-white rounded text-xs"
+          >
+            Save
+          </button>
+        </div>
         <button 
           @click="triggerResummarize"
           :disabled="processing"

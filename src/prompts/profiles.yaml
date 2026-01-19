@@ -1,0 +1,42 @@
+profiles:
+  common:
+    content.classify: { key: "common/content_classify/v1" }
+    content.clean: { key: "common/content_clean/v1" }
+
+  overrides:
+    insight:
+      summary.single: { key: "types/insight/summary_single/v2" }
+      summary.short:  { key: "types/insight/summary_short/v1" }
+      report.author:  { key: "types/insight/author_report/v1" }
+      rag.answer:     { key: "types/insight/rag/answer_v1" }
+      rag.rerank:     { key: "types/insight/rag/rerank_v1" }
+    howto:
+      summary.single: { key: "types/howto/summary_single/v1" }
+      summary.short:  { key: "types/howto/summary_short/v1" }
+      report.author:  { key: "types/howto/author_report/v1" }
+      rag.answer:     { key: "types/howto/rag/answer_v1" }
+      rag.rerank:     { key: "types/howto/rag/rerank_v1" }
+    science:
+      summary.single: { key: "types/science/summary_single/v1" }
+      summary.short:  { key: "types/science/summary_short/v1" }
+      report.author:  { key: "types/science/author_report/v1" }
+      rag.answer:     { key: "types/science/rag/answer_v1" }
+      rag.rerank:     { key: "types/science/rag/rerank_v1" }
+    news:
+      summary.single: { key: "types/news/summary_single/v1" }
+      summary.short:  { key: "types/news/summary_short/v1" }
+      report.author:  { key: "types/news/author_report/v1" }
+      rag.answer:     { key: "types/news/rag/answer_v1" }
+      rag.rerank:     { key: "types/news/rag/rerank_v1" }
+    story:
+      summary.single: { key: "types/story/summary_single/v1" }
+      summary.short:  { key: "types/story/summary_short/v1" }
+      report.author:  { key: "types/story/author_report/v1" }
+      rag.answer:     { key: "types/story/rag/answer_v1" }
+      rag.rerank:     { key: "types/story/rag/rerank_v1" }
+    generic:
+      summary.single: { key: "types/generic/summary_single/v1" }
+      summary.short:  { key: "types/generic/summary_short/v1" }
+      report.author:  { key: "types/generic/author_report/v1" }
+      rag.answer:     { key: "types/generic/rag/answer_v1" }
+      rag.rerank:     { key: "types/generic/rag/rerank_v1" }

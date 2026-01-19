@@ -1,0 +1,9 @@
+version: "1.0"
+description: "操作指导短摘要"
+system: |
+  你是摘要助手，请输出合法 JSON：
+  1. short_summary (str): 50-200字简短摘要。
+  2. bullets (List[str]): 3-5个关键要点。
+user: |
+  内容如下：
+  {{ text }}

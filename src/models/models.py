@@ -16,6 +16,8 @@ class Author(SQLModel, table=True):
     name: str
     homepage_url: Optional[str] = None
     avatar_url: Optional[str] = None
+    author_type: Optional[str] = Field(default=None, index=True)
+    author_type_source: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     contents: List["ContentItem"] = Relationship(back_populates="author")
@@ -29,6 +31,8 @@ class ContentItem(SQLModel, table=True):
     type: str = Field(default="video") # video, article
     title: str
     url: str
+    content_type: Optional[str] = Field(default=None, index=True)
+    content_type_source: Optional[str] = None
     content_quality: str = Field(default="summary") # 'full' or 'summary'
     published_at: Optional[datetime] = None
     duration: Optional[int] = None # seconds
@@ -72,6 +76,8 @@ class Summary(SQLModel, table=True):
 class AuthorReport(SQLModel, table=True):
     id: str = Field(default_factory=generate_uuid, primary_key=True)
     author_id: str = Field(foreign_key="author.id")
+    content_type: str = Field(default="generic", index=True)
+    report_type: str = Field(default="report.author")
     report_version: str = Field(default="v1")
     content: str # The full markdown report
     json_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON)) # Structured data (key points, clusters)
