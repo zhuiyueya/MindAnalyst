@@ -1,6 +1,9 @@
 import asyncio
-from typing import List, Dict
+from typing import List, Dict, Optional
 import os
+import tempfile
+import uuid
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from src.models.models import Author, ContentItem, Segment
@@ -32,6 +35,42 @@ class IngestionWorkflow:
             except Exception as e:
                 logger.warning(f"Failed to load local embedder: {e}")
                 self.embedder = None
+
+    async def _store_author_avatar(self, avatar_url: str, author_external_id: str) -> Optional[str]:
+        if not avatar_url:
+            return None
+
+        tmp_path = None
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(avatar_url)
+                resp.raise_for_status()
+                content_type = resp.headers.get("content-type", "")
+                if "png" in content_type:
+                    ext = ".png"
+                elif "webp" in content_type:
+                    ext = ".webp"
+                elif "jpeg" in content_type or "jpg" in content_type:
+                    ext = ".jpg"
+                else:
+                    ext = os.path.splitext(avatar_url.split("?")[0])[1] or ".jpg"
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                    tmp_file.write(resp.content)
+                    tmp_path = tmp_file.name
+
+            object_name = f"avatars/{author_external_id}_{uuid.uuid4().hex}{ext}"
+            await self.storage.upload_file(tmp_path, object_name)
+            return self.storage.get_file_url(object_name)
+        except Exception as e:
+            logger.warning(f"Failed to store avatar {avatar_url}: {e}")
+            return None
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception as rm_e:
+                    logger.warning(f"Failed to remove temp avatar file {tmp_path}: {rm_e}")
 
     async def ingest_from_browser(self, url: str, limit: int = 0):
         """
@@ -99,13 +138,18 @@ class IngestionWorkflow:
             result_db = await self.session.execute(stmt)
             author = result_db.scalar_one_or_none()
             
+            stored_avatar_url = None
+            if author_data and author_data.get("face"):
+                if not author or not author.avatar_url or author.avatar_url == author_data.get("face"):
+                    stored_avatar_url = await self._store_author_avatar(author_data.get("face"), mid)
+
             if not author:
                 author = Author(
                     platform="bilibili",
                     external_id=mid,
                     name=author_data["name"],
                     homepage_url=author_data["url"],
-                    avatar_url=author_data["face"]
+                    avatar_url=stored_avatar_url or author_data["face"]
                 )
                 self.session.add(author)
                 await self.session.commit()
@@ -115,10 +159,13 @@ class IngestionWorkflow:
                 # Optional: Update author info
                 if author.name == "Unknown Author" and author_data["name"] != "Unknown Author":
                     author.name = author_data["name"]
+                if stored_avatar_url:
+                    author.avatar_url = stored_avatar_url
+                elif not author.avatar_url and author_data.get("face"):
                     author.avatar_url = author_data["face"]
-                    self.session.add(author)
-                    await self.session.commit()
-                    logger.info(f"Updated author info: {author.name}")
+                self.session.add(author)
+                await self.session.commit()
+                logger.info(f"Updated author info: {author.name}")
                 
         except Exception as e:
             logger.error(f"Failed to get/create author: {e}. Creating dummy author.")
@@ -207,18 +254,27 @@ class IngestionWorkflow:
         result = await self.session.execute(stmt)
         author = result.scalar_one_or_none()
         
+        stored_avatar_url = None
+        if info.get("face"):
+            stored_avatar_url = await self._store_author_avatar(info.get("face"), mid)
+
         if not author:
             author = Author(
                 platform="bilibili",
                 external_id=mid,
                 name=info["name"],
                 homepage_url=f"https://space.bilibili.com/{mid}",
-                avatar_url=info["face"]
+                avatar_url=stored_avatar_url or info["face"]
             )
             self.session.add(author)
             await self.session.commit()
             await self.session.refresh(author)
             logger.info(f"Created author: {author.name}")
+        else:
+            if stored_avatar_url:
+                author.avatar_url = stored_avatar_url
+                self.session.add(author)
+                await self.session.commit()
         
         # 2. Get Videos
         videos = await self.crawler.get_videos(mid_or_url, limit=limit)
@@ -335,6 +391,9 @@ class IngestionWorkflow:
             
             if not subtitles:
                 logger.warning(f"No content found for {content.external_id}")
+                content.content_quality = "missing"
+                self.session.add(content)
+                await self.session.commit()
                 return
 
             # Determine quality

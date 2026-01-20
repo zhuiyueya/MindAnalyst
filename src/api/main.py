@@ -25,6 +25,33 @@ from contextlib import asynccontextmanager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def _compute_status_fields(content_quality: str, has_segments: bool, has_summary: bool) -> Dict[str, Any]:
+    using_fallback = content_quality == "summary"
+    if content_quality == "missing":
+        asr_status = "missing"
+    elif using_fallback:
+        asr_status = "fallback"
+    elif has_segments:
+        asr_status = "ready"
+    else:
+        asr_status = "pending"
+
+    if has_summary:
+        summary_status = "ready"
+    elif content_quality == "missing":
+        summary_status = "blocked"
+    elif using_fallback:
+        summary_status = "skipped_fallback"
+    else:
+        summary_status = "pending"
+
+    return {
+        "asr_status": asr_status,
+        "summary_status": summary_status,
+        "using_fallback": using_fallback,
+        "has_segments": has_segments
+    }
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -69,9 +96,40 @@ async def list_authors(session: AsyncSession = Depends(get_session)):
     stmt = select(Author)
     result = await session.execute(stmt)
     authors = result.scalars().all()
-    # Populate extra fields like video count if needed
-    # For now, just return author objects
-    return authors
+    authors_data = []
+    for author in authors:
+        stmt_contents = select(ContentItem).where(ContentItem.author_id == author.id)
+        res_contents = await session.execute(stmt_contents)
+        contents = res_contents.scalars().all()
+
+        asr_counts = {"ready": 0, "pending": 0, "fallback": 0, "missing": 0}
+        summary_counts = {"ready": 0, "pending": 0, "skipped_fallback": 0, "blocked": 0}
+        quality_counts = {"full": 0, "summary": 0, "missing": 0}
+
+        for content in contents:
+            stmt_seg = select(Segment.id).where(Segment.content_id == content.id).limit(1)
+            res_seg = await session.execute(stmt_seg)
+            has_segments = res_seg.scalar_one_or_none() is not None
+
+            stmt_sum = select(Summary.id).where(Summary.content_id == content.id).limit(1)
+            res_sum = await session.execute(stmt_sum)
+            has_summary = res_sum.scalar_one_or_none() is not None
+
+            status_fields = _compute_status_fields(content.content_quality, has_segments, has_summary)
+            asr_counts[status_fields["asr_status"]] += 1
+            summary_counts[status_fields["summary_status"]] += 1
+            quality_counts[content.content_quality] = quality_counts.get(content.content_quality, 0) + 1
+
+        author_data = author.model_dump()
+        author_data["author_status"] = {
+            "total_videos": len(contents),
+            "asr_status_counts": asr_counts,
+            "summary_status_counts": summary_counts,
+            "content_quality_counts": quality_counts
+        }
+        authors_data.append(author_data)
+
+    return authors_data
 
 @app.get("/api/v1/authors/{author_id}")
 async def get_author(author_id: str, session: AsyncSession = Depends(get_session)):
@@ -89,11 +147,41 @@ async def get_author(author_id: str, session: AsyncSession = Depends(get_session
         reports_by_type.setdefault(key, []).append(report)
     latest_report = reports_data[0] if reports_data else None
 
+    stmt_contents = select(ContentItem).where(ContentItem.author_id == author_id)
+    res_contents = await session.execute(stmt_contents)
+    contents = res_contents.scalars().all()
+
+    asr_counts = {"ready": 0, "pending": 0, "fallback": 0, "missing": 0}
+    summary_counts = {"ready": 0, "pending": 0, "skipped_fallback": 0, "blocked": 0}
+    quality_counts = {"full": 0, "summary": 0, "missing": 0}
+
+    for content in contents:
+        stmt_seg = select(Segment.id).where(Segment.content_id == content.id).limit(1)
+        res_seg = await session.execute(stmt_seg)
+        has_segments = res_seg.scalar_one_or_none() is not None
+
+        stmt_sum = select(Summary.id).where(Summary.content_id == content.id).limit(1)
+        res_sum = await session.execute(stmt_sum)
+        has_summary = res_sum.scalar_one_or_none() is not None
+
+        status_fields = _compute_status_fields(content.content_quality, has_segments, has_summary)
+        asr_counts[status_fields["asr_status"]] += 1
+        summary_counts[status_fields["summary_status"]] += 1
+        quality_counts[content.content_quality] = quality_counts.get(content.content_quality, 0) + 1
+
+    author_status = {
+        "total_videos": len(contents),
+        "asr_status_counts": asr_counts,
+        "summary_status_counts": summary_counts,
+        "content_quality_counts": quality_counts
+    }
+
     return {
         "author": author,
         "latest_report": latest_report,
         "reports": reports_data,
-        "reports_by_type": reports_by_type
+        "reports_by_type": reports_by_type,
+        "author_status": author_status
     }
 
 @app.get("/api/v1/authors/{author_id}/videos")
@@ -102,17 +190,19 @@ async def get_author_videos(author_id: str, session: AsyncSession = Depends(get_
     result = await session.execute(stmt)
     videos = result.scalars().all()
     
-    # We might want to include summary status
     video_list = []
     for v in videos:
-        # Check if summary exists
-        # This is N+1 query, but for MVP it's okay (or optimize with join)
-        stmt_sum = select(Summary).where(Summary.content_id == v.id)
+        stmt_sum = select(Summary.id).where(Summary.content_id == v.id).limit(1)
         res_sum = await session.execute(stmt_sum)
-        summary = res_sum.scalar_one_or_none()
-        
+        has_summary = res_sum.scalar_one_or_none() is not None
+
+        stmt_seg = select(Segment.id).where(Segment.content_id == v.id).limit(1)
+        res_seg = await session.execute(stmt_seg)
+        has_segments = res_seg.scalar_one_or_none() is not None
+
         v_dict = v.model_dump()
-        v_dict["has_summary"] = bool(summary)
+        v_dict["has_summary"] = has_summary
+        v_dict.update(_compute_status_fields(v.content_quality, has_segments, has_summary))
         video_list.append(v_dict)
         
     return video_list
@@ -143,8 +233,13 @@ async def get_video_detail(video_id: str, session: AsyncSession = Depends(get_se
     res_seg = await session.execute(stmt_seg)
     segments = res_seg.scalars().all()
 
+    has_segments = len(segments) > 0
+    has_summary = summary is not None
+    video_data = video.model_dump()
+    video_data.update(_compute_status_fields(video.content_quality, has_segments, has_summary))
+
     return {
-        "video": video.model_dump(),
+        "video": video_data,
         "summary": summary.model_dump() if summary else None,
         "segments": [s.model_dump(exclude={"embedding"}) for s in segments],
     }

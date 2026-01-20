@@ -102,9 +102,48 @@ const formatTime = (ms) => {
       <h2 class="text-2xl font-bold text-gray-900">{{ video.title }}</h2>
       <div class="mt-2 flex items-center space-x-4 text-sm text-gray-500">
         <span>{{ new Date(video.published_at).toLocaleDateString() }}</span>
-        <span>Quality: {{ video.content_quality }}</span>
         <span>Content Type: {{ video.content_type || 'generic' }}</span>
         <a :href="video.url" target="_blank" class="text-indigo-600 hover:underline">Original Link</a>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2 text-xs">
+        <span :class="video.asr_status === 'ready'
+          ? 'bg-green-100 text-green-700'
+          : video.asr_status === 'fallback'
+            ? 'bg-amber-100 text-amber-700'
+            : video.asr_status === 'missing'
+              ? 'bg-red-100 text-red-700'
+              : 'bg-yellow-100 text-yellow-700'"
+          class="px-2 py-1 rounded"
+        >
+          ASR: {{ video.asr_status || 'pending' }}
+        </span>
+        <span :class="video.summary_status === 'ready'
+          ? 'bg-green-100 text-green-700'
+          : video.summary_status === 'blocked'
+            ? 'bg-red-100 text-red-700'
+            : video.summary_status === 'skipped_fallback'
+              ? 'bg-amber-100 text-amber-700'
+              : 'bg-yellow-100 text-yellow-700'"
+          class="px-2 py-1 rounded"
+        >
+          Summary: {{ video.summary_status || 'pending' }}
+        </span>
+        <span
+          :class="video.using_fallback ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'"
+          class="px-2 py-1 rounded"
+        >
+          Fallback: {{ video.using_fallback ? 'Yes' : 'No' }}
+        </span>
+        <span
+          :class="video.content_quality === 'full'
+            ? 'bg-green-100 text-green-700'
+            : video.content_quality === 'summary'
+              ? 'bg-amber-100 text-amber-700'
+              : 'bg-red-100 text-red-700'"
+          class="px-2 py-1 rounded"
+        >
+          Quality: {{ video.content_quality || 'summary' }}
+        </span>
       </div>
       <div class="mt-4 flex flex-wrap items-center gap-3">
         <div class="flex items-center space-x-2">

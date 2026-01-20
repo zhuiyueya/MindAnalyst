@@ -13,6 +13,7 @@ const reportsByType = ref({})
 const selectedReportType = ref('')
 const selectedAuthorType = ref('')
 const videos = ref([])
+const authorStatus = ref(null)
 const loading = ref(true)
 const activeTab = ref('report')
 const processing = ref(false)
@@ -37,6 +38,7 @@ const fetchData = async () => {
       selectedReportType.value = types.length ? types[0] : ''
     }
     videos.value = vidRes.data
+    authorStatus.value = authRes.data.author_status || null
   } catch (e) {
     console.error(e)
   } finally {
@@ -54,6 +56,23 @@ const activeReport = computed(() => {
 })
 
 const reportTypes = computed(() => Object.keys(reportsByType.value || {}))
+
+const statusClass = (status) => {
+  switch (status) {
+    case 'ready':
+      return 'bg-green-100 text-green-700'
+    case 'fallback':
+      return 'bg-amber-100 text-amber-700'
+    case 'missing':
+      return 'bg-red-100 text-red-700'
+    case 'blocked':
+      return 'bg-red-100 text-red-700'
+    case 'skipped_fallback':
+      return 'bg-yellow-100 text-yellow-700'
+    default:
+      return 'bg-gray-100 text-gray-700'
+  }
+}
 
 const renderReport = computed(() => {
   if (!activeReport.value || !activeReport.value.content) return 'No report generated yet.'
@@ -134,6 +153,44 @@ const triggerReprocessAsr = async () => {
               {{ author.homepage_url }}
             </a>
           </p>
+          <div v-if="authorStatus" class="mt-3 flex flex-wrap gap-2 text-xs">
+            <span class="px-2 py-1 rounded bg-gray-100 text-gray-700">
+              Videos: {{ authorStatus.total_videos }}
+            </span>
+            <span class="px-2 py-1 rounded bg-green-100 text-green-700">
+              ASR ready: {{ authorStatus.asr_status_counts.ready }}
+            </span>
+            <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
+              ASR fallback: {{ authorStatus.asr_status_counts.fallback }}
+            </span>
+            <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
+              ASR pending: {{ authorStatus.asr_status_counts.pending }}
+            </span>
+            <span class="px-2 py-1 rounded bg-red-100 text-red-700">
+              ASR missing: {{ authorStatus.asr_status_counts.missing }}
+            </span>
+            <span class="px-2 py-1 rounded bg-green-100 text-green-700">
+              Summary ready: {{ authorStatus.summary_status_counts.ready }}
+            </span>
+            <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
+              Summary pending: {{ authorStatus.summary_status_counts.pending }}
+            </span>
+            <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
+              Summary skipped: {{ authorStatus.summary_status_counts.skipped_fallback }}
+            </span>
+            <span class="px-2 py-1 rounded bg-red-100 text-red-700">
+              Summary blocked: {{ authorStatus.summary_status_counts.blocked }}
+            </span>
+            <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
+              Quality full: {{ authorStatus.content_quality_counts.full }}
+            </span>
+            <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
+              Quality summary: {{ authorStatus.content_quality_counts.summary }}
+            </span>
+            <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
+              Quality missing: {{ authorStatus.content_quality_counts.missing }}
+            </span>
+          </div>
           <div class="mt-4 flex flex-wrap items-center gap-3">
             <div class="flex items-center space-x-2">
               <label class="text-sm text-gray-600">Author Type</label>
@@ -226,11 +283,34 @@ const triggerReprocessAsr = async () => {
                 {{ video.title }}
               </h4>
               <p class="text-sm text-gray-500 mt-1">
-                Published: {{ new Date(video.published_at).toLocaleDateString() }} | 
-                Type: {{ video.type }} | 
-                Content Type: {{ video.content_type || 'generic' }} | 
-                Status: <span :class="video.has_summary ? 'text-green-600' : 'text-yellow-600'">{{ video.has_summary ? 'Summarized' : 'Pending' }}</span>
+                Published: {{ new Date(video.published_at).toLocaleDateString() }} |
+                Type: {{ video.type }} |
+                Content Type: {{ video.content_type || 'generic' }}
               </p>
+              <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                <span :class="statusClass(video.asr_status)" class="px-2 py-1 rounded">
+                  ASR: {{ video.asr_status || 'pending' }}
+                </span>
+                <span :class="statusClass(video.summary_status)" class="px-2 py-1 rounded">
+                  Summary: {{ video.summary_status || 'pending' }}
+                </span>
+                <span
+                  :class="video.using_fallback ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'"
+                  class="px-2 py-1 rounded"
+                >
+                  Fallback: {{ video.using_fallback ? 'Yes' : 'No' }}
+                </span>
+                <span
+                  :class="video.content_quality === 'full'
+                    ? 'bg-green-100 text-green-700'
+                    : video.content_quality === 'summary'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-red-100 text-red-700'"
+                  class="px-2 py-1 rounded"
+                >
+                  Quality: {{ video.content_quality || 'summary' }}
+                </span>
+              </div>
             </div>
             <div class="ml-4">
                <button 

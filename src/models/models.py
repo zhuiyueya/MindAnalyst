@@ -33,7 +33,7 @@ class ContentItem(SQLModel, table=True):
     url: str
     content_type: Optional[str] = Field(default=None, index=True)
     content_type_source: Optional[str] = None
-    content_quality: str = Field(default="summary") # 'full' or 'summary'
+    content_quality: str = Field(default="summary") # 'full', 'summary', or 'missing'
     published_at: Optional[datetime] = None
     duration: Optional[int] = None # seconds
     extra_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
