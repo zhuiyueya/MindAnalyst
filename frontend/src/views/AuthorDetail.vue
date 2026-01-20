@@ -85,12 +85,29 @@ const triggerRegenerateReport = async () => {
   }
 }
 
-const triggerResummarizeAll = async () => {
-  if (!confirm('Re-summarize ALL videos? This is a heavy operation.')) return
+const triggerResummarizeAll = async (includeFallback = false) => {
+  const includeFallbackFlag = includeFallback instanceof Event ? false : includeFallback
+  const message = includeFallbackFlag
+    ? 'Re-summarize ALL videos (including fallback transcripts)?'
+    : 'Re-summarize ALL videos? This is a heavy operation.'
+  if (!confirm(message)) return
   processing.value = true
   try {
-    await api.resummarizeAll(authorId)
+    await api.resummarizeAll(authorId, includeFallbackFlag)
     alert('Batch task started.')
+  } catch (e) {
+    alert('Failed: ' + e.message)
+  } finally {
+    processing.value = false
+  }
+}
+
+const triggerReprocessAsr = async () => {
+  if (!confirm('Re-fetch transcripts (ASR/subtitles) for this author?')) return
+  processing.value = true
+  try {
+    await api.reprocessAuthorAsr(authorId)
+    alert('Transcript reprocess started.')
   } catch (e) {
     alert('Failed: ' + e.message)
   } finally {
@@ -146,6 +163,20 @@ const triggerResummarizeAll = async () => {
               class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 text-sm"
             >
               Re-Summarize All Videos
+            </button>
+            <button 
+              @click="triggerResummarizeAll(true)"
+              :disabled="processing"
+              class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
+            >
+              Re-Summarize (Include Fallback)
+            </button>
+            <button 
+              @click="triggerReprocessAsr"
+              :disabled="processing"
+              class="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 text-sm"
+            >
+              Re-Fetch Transcripts (ASR)
             </button>
           </div>
         </div>

@@ -56,12 +56,29 @@ const saveContentType = async () => {
 
 onMounted(fetchData)
 
-const triggerResummarize = async () => {
-  if (!confirm('Re-summarize this video?')) return
+const triggerResummarize = async (includeFallback = false) => {
+  const includeFallbackFlag = includeFallback instanceof Event ? false : includeFallback
+  const message = includeFallbackFlag
+    ? 'Re-summarize this video (including fallback transcript)?'
+    : 'Re-summarize this video?'
+  if (!confirm(message)) return
   processing.value = true
   try {
-    await api.resummarizeVideo(videoId)
+    await api.resummarizeVideo(videoId, includeFallbackFlag)
     alert('Task started.')
+  } catch (e) {
+    alert('Failed: ' + e.message)
+  } finally {
+    processing.value = false
+  }
+}
+
+const triggerReprocessAsr = async () => {
+  if (!confirm('Re-fetch transcript (ASR/subtitles) for this video?')) return
+  processing.value = true
+  try {
+    await api.reprocessVideoAsr(videoId)
+    alert('Transcript reprocess started.')
   } catch (e) {
     alert('Failed: ' + e.message)
   } finally {
@@ -111,6 +128,20 @@ const formatTime = (ms) => {
           class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm"
         >
           Re-Summarize
+        </button>
+        <button 
+          @click="triggerResummarize(true)"
+          :disabled="processing"
+          class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
+        >
+          Re-Summarize (Include Fallback)
+        </button>
+        <button 
+          @click="triggerReprocessAsr"
+          :disabled="processing"
+          class="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 text-sm"
+        >
+          Re-Fetch Transcript (ASR)
         </button>
       </div>
     </div>

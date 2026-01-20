@@ -24,8 +24,13 @@ export default {
   setAuthorType(id, data) {
     return apiClient.post(`/authors/${id}/set_type`, data);
   },
-  resummarizeAll(id) {
-    return apiClient.post(`/authors/${id}/resummarize_all`);
+  resummarizeAll(id, includeFallback = false) {
+    return apiClient.post(`/authors/${id}/resummarize_all`, null, {
+      params: { include_fallback: includeFallback }
+    });
+  },
+  reprocessAuthorAsr(id) {
+    return apiClient.post(`/authors/${id}/reprocess_asr`);
   },
 
   // Videos
@@ -35,8 +40,13 @@ export default {
   getVideoPlayback(id) {
     return apiClient.get(`/videos/${id}/playback`);
   },
-  resummarizeVideo(id) {
-    return apiClient.post(`/videos/${id}/resummarize`);
+  resummarizeVideo(id, includeFallback = false) {
+    return apiClient.post(`/videos/${id}/resummarize`, null, {
+      params: { include_fallback: includeFallback }
+    });
+  },
+  reprocessVideoAsr(id) {
+    return apiClient.post(`/videos/${id}/reprocess_asr`);
   },
   setVideoType(id, data) {
     return apiClient.post(`/videos/${id}/set_type`, data);

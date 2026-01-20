@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sqlalchemy import delete
 from dotenv import load_dotenv
 import os
 
@@ -270,20 +271,22 @@ async def regenerate_author_report(
 async def resummarize_all_videos(
     author_id: str, 
     background_tasks: BackgroundTasks,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    include_fallback: bool = False
 ):
     author = await session.get(Author, author_id)
     if not author:
         raise HTTPException(status_code=404, detail="Author not found")
         
-    background_tasks.add_task(run_resummarize_author, author_id)
+    background_tasks.add_task(run_resummarize_author, author_id, include_fallback)
     return {"status": "started", "message": "Batch summarization started"}
 
 @app.post("/api/v1/videos/{video_id}/resummarize")
 async def resummarize_video(
     video_id: str, 
     background_tasks: BackgroundTasks,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    include_fallback: bool = False
 ):
     # Verify video
     video = await session.get(ContentItem, video_id)
@@ -296,8 +299,38 @@ async def resummarize_video(
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
         
-    background_tasks.add_task(run_resummarize_video, video.id)
+    background_tasks.add_task(run_resummarize_video, video.id, include_fallback)
     return {"status": "started", "message": "Video summarization started"}
+
+@app.post("/api/v1/authors/{author_id}/reprocess_asr")
+async def reprocess_author_asr(
+    author_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+
+    background_tasks.add_task(run_reprocess_author_asr, author_id)
+    return {"status": "started", "message": "Transcript reprocess started"}
+
+@app.post("/api/v1/videos/{video_id}/reprocess_asr")
+async def reprocess_video_asr(
+    video_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    video = await session.get(ContentItem, video_id)
+    if not video:
+        stmt = select(ContentItem).where(ContentItem.external_id == video_id)
+        result = await session.execute(stmt)
+        video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    background_tasks.add_task(run_reprocess_video_asr, video.id)
+    return {"status": "started", "message": "Transcript reprocess started"}
 
 # Background Task Functions
 
@@ -310,7 +343,7 @@ async def run_regenerate_report(author_id: str):
             logger.error(f"Report regeneration failed: {e}")
         break
 
-async def run_resummarize_video(content_id: str):
+async def run_resummarize_video(content_id: str, include_fallback: bool = False):
     async for session in get_session():
         analysis = AnalysisWorkflow(session)
         try:
@@ -326,6 +359,10 @@ async def run_resummarize_video(content_id: str):
             if not segments:
                 logger.warning(f"No segments found for {content.title}, cannot summarize.")
                 return
+
+            if content.content_quality == "summary" and not include_fallback:
+                logger.info(f"Skipping {content.title} (fallback transcript).")
+                return
             
             # Check for existing summary to update
             stmt_sum = select(Summary).where(Summary.content_id == content_id)
@@ -338,7 +375,7 @@ async def run_resummarize_video(content_id: str):
             logger.error(f"Video summarization failed: {e}")
         break
 
-async def run_resummarize_author(author_id: str):
+async def run_resummarize_author(author_id: str, include_fallback: bool = False):
     async for session in get_session():
         analysis = AnalysisWorkflow(session)
         try:
@@ -355,18 +392,62 @@ async def run_resummarize_author(author_id: str):
                 res_seg = await session.execute(stmt_seg)
                 segments = res_seg.scalars().all()
                 
-                if segments:
-                    # Check for existing summary
-                    stmt_sum = select(Summary).where(Summary.content_id == content.id)
-                    res_sum = await session.execute(stmt_sum)
-                    existing_summary = res_sum.scalar_one_or_none()
-                    
-                    await analysis.generate_content_summary(content, segments, existing_summary=existing_summary)
-                else:
+                if not segments:
                     logger.info(f"Skipping {content.title} (no segments)")
+                    continue
+
+                if content.content_quality == "summary" and not include_fallback:
+                    logger.info(f"Skipping {content.title} (fallback transcript)")
+                    continue
+
+                stmt_sum = select(Summary).where(Summary.content_id == content.id)
+                res_sum = await session.execute(stmt_sum)
+                existing_summary = res_sum.scalar_one_or_none()
+                
+                await analysis.generate_content_summary(content, segments, existing_summary=existing_summary)
                     
         except Exception as e:
             logger.error(f"Batch summarization failed: {e}")
+        break
+
+async def run_reprocess_video_asr(content_id: str):
+    async for session in get_session():
+        workflow = IngestionWorkflow(session)
+        try:
+            content = await session.get(ContentItem, content_id)
+            if not content:
+                return
+
+            await session.execute(delete(Segment).where(Segment.content_id == content_id))
+            await session.commit()
+            await workflow.process_content(content)
+        except Exception as e:
+            logger.error(f"Transcript reprocess failed: {e}")
+        break
+
+async def run_reprocess_author_asr(author_id: str):
+    async for session in get_session():
+        workflow = IngestionWorkflow(session)
+        try:
+            stmt = select(ContentItem).where(ContentItem.author_id == author_id)
+            res = await session.execute(stmt)
+            contents = res.scalars().all()
+            logger.info(f"Reprocessing transcripts for {len(contents)} videos (author {author_id})")
+
+            for content in contents:
+                stmt_seg = select(Segment.id).where(Segment.content_id == content.id).limit(1)
+                res_seg = await session.execute(stmt_seg)
+                has_segment = res_seg.scalar_one_or_none() is not None
+                needs_reprocess = (not has_segment) or content.content_quality == "summary"
+
+                if not needs_reprocess:
+                    continue
+
+                await session.execute(delete(Segment).where(Segment.content_id == content.id))
+                await session.commit()
+                await workflow.process_content(content)
+        except Exception as e:
+            logger.error(f"Transcript reprocess failed: {e}")
         break
 
 @app.post("/api/v1/ingest")

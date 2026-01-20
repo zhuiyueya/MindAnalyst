@@ -15,8 +15,8 @@ class AnalysisWorkflow:
         self.llm = LLMService()
 
     async def _resolve_author(self, content: ContentItem) -> Optional[Author]:
-        if content.author:
-            return content.author
+        if not content.author_id:
+            return None
         return await self.session.get(Author, content.author_id)
 
     async def _resolve_content_type(self, content: ContentItem, full_text: str) -> str:
