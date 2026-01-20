@@ -73,11 +73,26 @@ class BrowserCrawler:
             try:
                 # Try multiple selectors for author name
                 author_name_el = await page.query_selector("#h-name") or await page.query_selector(".nickname") or await page.query_selector(".h-name")
-                author_face_el = await page.query_selector("#h-avatar") or await page.query_selector(".h-avatar img") or await page.query_selector(".h-avatar")
+                author_face_el = (
+                    await page.query_selector("#h-avatar")
+                    or await page.query_selector(".h-avatar img")
+                    or await page.query_selector(".b-avatar img")
+                    or await page.query_selector(".b-avatar__layer__res img")
+                    or await page.query_selector("img[data-onload='onAvtSrcLoad']")
+                    or await page.query_selector(".h-avatar")
+                )
                 
                 if author_name_el:
                     name = await author_name_el.inner_text()
-                    face = await author_face_el.get_attribute("src") if author_face_el else ""
+                    face = ""
+                    if author_face_el:
+                        face = await author_face_el.get_attribute("src")
+                        if not face:
+                            nested_img = await author_face_el.query_selector("img")
+                            if nested_img:
+                                face = await nested_img.get_attribute("src")
+                    if face and face.startswith("//"):
+                        face = f"https:{face}"
                     # Extract mid from url if possible
                     mid = url.split("space.bilibili.com/")[1].split("/")[0] if "space.bilibili.com" in url else ""
                     

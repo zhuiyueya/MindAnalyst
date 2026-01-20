@@ -110,8 +110,8 @@ class IngestionWorkflow:
         try:
             mid = author_data["mid"] if author_data else "0"
             
-            # If we didn't scrape author info (e.g. not on Space page), try fallback
-            if not author_data or not mid:
+            # If we didn't scrape author info (e.g. not on Space page), or avatar missing, try fallback
+            if not author_data or not mid or not author_data.get("face"):
                 logger.info(f"Fetching author info for BVID: {first_vid['bvid']}")
                 # Add try-except for bilix call
                 try:
