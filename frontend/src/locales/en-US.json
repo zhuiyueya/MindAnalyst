@@ -1,0 +1,132 @@
+{
+  "nav": {
+    "appName": "Mind Analyst",
+    "authors": "Authors",
+    "ingest": "Ingest",
+    "chat": "Chat",
+    "language": "Language",
+    "languageZh": "中文",
+    "languageEn": "English"
+  },
+  "dashboard": {
+    "title": "Welcome to Mind Analyst",
+    "subtitle": "Your personal knowledge base for Bilibili creators.",
+    "exploreAuthors": "Explore Authors",
+    "ingestContent": "Ingest Content"
+  },
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "processing": "Processing...",
+    "taskStarted": "Task started.",
+    "checkBackLater": "Task started. Check back later.",
+    "batchTaskStarted": "Batch task started.",
+    "transcriptReprocessStarted": "Transcript reprocess started.",
+    "failedPrefix": "Failed: ",
+    "published": "Published",
+    "type": "Type",
+    "contentType": "Content Type",
+    "reportType": "Report Type",
+    "videos": "Videos",
+    "viewDetails": "View Details",
+    "yes": "Yes",
+    "no": "No",
+    "originalLink": "Original Link"
+  },
+  "status": {
+    "labels": {
+      "asr": "ASR",
+      "summary": "Summary",
+      "fallback": "Fallback",
+      "quality": "Quality"
+    },
+    "values": {
+      "ready": "Ready",
+      "pending": "Pending",
+      "fallback": "Fallback",
+      "missing": "Missing",
+      "blocked": "Blocked",
+      "skipped_fallback": "Skipped fallback",
+      "full": "Full",
+      "summary": "Summary"
+    }
+  },
+  "authors": {
+    "title": "Authors",
+    "platform": "Platform"
+  },
+  "author": {
+    "authorTypeLabel": "Author Type",
+    "authorTypePlaceholder": "e.g. insight / howto",
+    "regenerateReport": "Regenerate Report",
+    "resummarizeAll": "Re-Summarize All Videos",
+    "resummarizeAllIncludeFallback": "Re-Summarize (Include Fallback)",
+    "reprocessAsr": "Re-Fetch Transcripts (ASR)",
+    "confirmRegenerateReport": "Regenerate author report? This may take a while.",
+    "confirmResummarizeAll": "Re-summarize ALL videos? This is a heavy operation.",
+    "confirmResummarizeAllIncludeFallback": "Re-summarize ALL videos (including fallback transcripts)?",
+    "confirmReprocessAsr": "Re-fetch transcripts (ASR/subtitles) for this author?",
+    "analysisReportTab": "Analysis Report",
+    "videosTab": "Videos",
+    "noReport": "No report generated yet.",
+    "status": {
+      "videos": "Videos",
+      "asrReady": "ASR ready",
+      "asrFallback": "ASR fallback",
+      "asrPending": "ASR pending",
+      "asrMissing": "ASR missing",
+      "summaryReady": "Summary ready",
+      "summaryPending": "Summary pending",
+      "summarySkipped": "Summary skipped",
+      "summaryBlocked": "Summary blocked",
+      "qualityFull": "Quality full",
+      "qualitySummary": "Quality summary",
+      "qualityMissing": "Quality missing"
+    }
+  },
+  "video": {
+    "originalMedia": "Original Audio/Video",
+    "audioNotSupported": "Your browser does not support the audio element.",
+    "summaryTitle": "Summary",
+    "oneLiner": "One Liner",
+    "keyPoints": "Key Points",
+    "corePrinciples": "Core Principles",
+    "actionableGuidelines": "Actionable Guidelines",
+    "cognitiveWarnings": "Cognitive Warnings",
+    "caseStudies": "Case Studies",
+    "noSummary": "No summary available.",
+    "transcriptTitle": "Transcript",
+    "noTranscript": "No transcript segments available.",
+    "resummarize": "Re-Summarize",
+    "resummarizeIncludeFallback": "Re-Summarize (Include Fallback)",
+    "reprocessAsr": "Re-Fetch Transcript (ASR)",
+    "confirmResummarize": "Re-summarize this video?",
+    "confirmResummarizeIncludeFallback": "Re-summarize this video (including fallback transcript)?",
+    "confirmReprocessAsr": "Re-fetch transcript (ASR/subtitles) for this video?"
+  },
+  "ingest": {
+    "title": "Ingest Author Videos",
+    "midLabel": "Bilibili Author MID",
+    "midPlaceholder": "44497027",
+    "midHelp": "Enter the numeric ID from the author's homepage URL.",
+    "limitLabel": "Max Videos to Analyze",
+    "start": "Start Ingestion",
+    "success": "Success: {message}. Task ID: {taskId}",
+    "error": "Error: {message}",
+    "howItWorksTitle": "How it works:",
+    "step1": "The system will open a browser to visit the author's Space page.",
+    "step2": "It will extract video links (up to the limit you set).",
+    "step3": "For each video, it downloads the audio, transcribes it, and vectorizes the content.",
+    "step4": "Once finished, you can chat with this author's digital twin in the Chat tab."
+  },
+  "chat": {
+    "welcome": "Hello! I am your Mind Analyst. Ask me anything about the ingested videos.",
+    "toolbarLabel": "Chatting with:",
+    "allAuthors": "All Authors",
+    "refreshAuthors": "Refresh Authors",
+    "sources": "Sources:",
+    "askPlaceholder": "Ask a question...",
+    "send": "Send",
+    "errorPrefix": "Error: "
+  }
+}

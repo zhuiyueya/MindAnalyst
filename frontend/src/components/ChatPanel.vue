@@ -1,9 +1,12 @@
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 
+const { t } = useI18n()
+
 const messages = ref([
-  { role: 'assistant', content: 'Hello! I am your Mind Analyst. Ask me anything about the ingested videos.' }
+  { role: 'assistant', content: t('chat.welcome') }
 ])
 const query = ref('')
 const isLoading = ref(false)
@@ -55,7 +58,10 @@ const handleChat = async () => {
       citations: res.data.citations 
     })
   } catch (e) {
-    messages.value.push({ role: 'assistant', content: `Error: ${e.response?.data?.detail || e.message}` })
+    messages.value.push({
+      role: 'assistant',
+      content: `${t('chat.errorPrefix')}${e.response?.data?.detail || e.message}`
+    })
   } finally {
     isLoading.value = false
     scrollToBottom()
@@ -68,19 +74,19 @@ const handleChat = async () => {
     <!-- Toolbar -->
     <div class="px-6 py-3 border-b bg-gray-50 flex items-center justify-between">
       <div class="flex items-center space-x-2">
-        <label class="text-sm font-medium text-gray-700">Chatting with:</label>
+        <label class="text-sm font-medium text-gray-700">{{ t('chat.toolbarLabel') }}</label>
         <select 
           v-model="selectedAuthorId" 
           class="block w-48 pl-3 pr-10 py-1.5 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
         >
-          <option :value="null">All Authors</option>
+          <option :value="null">{{ t('chat.allAuthors') }}</option>
           <option v-for="author in authors" :key="author.id" :value="author.id">
             {{ author.name }} ({{ author.platform }})
           </option>
         </select>
       </div>
       <button @click="fetchAuthors" class="text-xs text-indigo-600 hover:text-indigo-800">
-        Refresh Authors
+        {{ t('chat.refreshAuthors') }}
       </button>
     </div>
 
@@ -101,7 +107,7 @@ const handleChat = async () => {
           
           <!-- Citations -->
           <div v-if="msg.citations && msg.citations.length" class="mt-4 pt-4 border-t border-gray-300 text-xs">
-            <p class="font-semibold mb-2">Sources:</p>
+            <p class="font-semibold mb-2">{{ t('chat.sources') }}</p>
             <ul class="space-y-1">
               <li v-for="(cit, cIdx) in msg.citations" :key="cIdx" class="text-gray-600">
                 <a :href="cit.url" target="_blank" class="hover:underline hover:text-indigo-600 flex items-start">
@@ -132,7 +138,7 @@ const handleChat = async () => {
           v-model="query"
           @keyup.enter="handleChat"
           type="text"
-          placeholder="Ask a question..."
+          :placeholder="t('chat.askPlaceholder')"
           class="flex-1 p-3 border rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none"
           :disabled="isLoading"
         />
@@ -141,7 +147,7 @@ const handleChat = async () => {
           :disabled="isLoading || !query.trim()"
           class="bg-indigo-600 text-white px-6 py-3 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
         >
-          Send
+          {{ t('chat.send') }}
         </button>
       </div>
     </div>

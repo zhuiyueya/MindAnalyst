@@ -12,6 +12,7 @@
     "axios": "^1.6.7",
     "markdown-it": "^14.0.0",
     "vue": "^3.4.19",
+    "vue-i18n": "^9.10.2",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {

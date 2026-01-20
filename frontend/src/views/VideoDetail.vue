@@ -1,10 +1,12 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import api from '../api'
 
 const route = useRoute()
 const videoId = route.params.id
+const { t, locale } = useI18n()
 
 const video = ref(null)
 const summary = ref(null)
@@ -59,30 +61,42 @@ onMounted(fetchData)
 const triggerResummarize = async (includeFallback = false) => {
   const includeFallbackFlag = includeFallback instanceof Event ? false : includeFallback
   const message = includeFallbackFlag
-    ? 'Re-summarize this video (including fallback transcript)?'
-    : 'Re-summarize this video?'
+    ? t('video.confirmResummarizeIncludeFallback')
+    : t('video.confirmResummarize')
   if (!confirm(message)) return
   processing.value = true
   try {
     await api.resummarizeVideo(videoId, includeFallbackFlag)
-    alert('Task started.')
+    alert(t('common.taskStarted'))
   } catch (e) {
-    alert('Failed: ' + e.message)
+    alert(t('common.failedPrefix') + e.message)
   } finally {
     processing.value = false
   }
 }
 
 const triggerReprocessAsr = async () => {
-  if (!confirm('Re-fetch transcript (ASR/subtitles) for this video?')) return
+  if (!confirm(t('video.confirmReprocessAsr'))) return
   processing.value = true
   try {
     await api.reprocessVideoAsr(videoId)
-    alert('Transcript reprocess started.')
+    alert(t('common.transcriptReprocessStarted'))
   } catch (e) {
-    alert('Failed: ' + e.message)
+    alert(t('common.failedPrefix') + e.message)
   } finally {
     processing.value = false
+  }
+}
+
+const statusText = (status) => t(`status.values.${status || 'pending'}`)
+const qualityText = (quality) => t(`status.values.${quality || 'summary'}`)
+
+const formatDate = (value) => {
+  if (!value) return ''
+  try {
+    return new Intl.DateTimeFormat(locale.value).format(new Date(value))
+  } catch (e) {
+    return new Date(value).toLocaleDateString()
   }
 }
 
@@ -95,15 +109,15 @@ const formatTime = (ms) => {
 </script>
 
 <template>
-  <div v-if="loading" class="text-center py-10">Loading...</div>
+  <div v-if="loading" class="text-center py-10">{{ t('common.loading') }}</div>
   <div v-else class="space-y-6">
     <!-- Header -->
     <div class="bg-white shadow rounded-lg p-6">
       <h2 class="text-2xl font-bold text-gray-900">{{ video.title }}</h2>
       <div class="mt-2 flex items-center space-x-4 text-sm text-gray-500">
-        <span>{{ new Date(video.published_at).toLocaleDateString() }}</span>
-        <span>Content Type: {{ video.content_type || 'generic' }}</span>
-        <a :href="video.url" target="_blank" class="text-indigo-600 hover:underline">Original Link</a>
+        <span>{{ formatDate(video.published_at) }}</span>
+        <span>{{ t('common.contentType') }}: {{ video.content_type || 'generic' }}</span>
+        <a :href="video.url" target="_blank" class="text-indigo-600 hover:underline">{{ t('common.originalLink') }}</a>
       </div>
       <div class="mt-3 flex flex-wrap gap-2 text-xs">
         <span :class="video.asr_status === 'ready'
@@ -115,7 +129,7 @@ const formatTime = (ms) => {
               : 'bg-yellow-100 text-yellow-700'"
           class="px-2 py-1 rounded"
         >
-          ASR: {{ video.asr_status || 'pending' }}
+          {{ t('status.labels.asr') }}: {{ statusText(video.asr_status) }}
         </span>
         <span :class="video.summary_status === 'ready'
           ? 'bg-green-100 text-green-700'
@@ -126,13 +140,13 @@ const formatTime = (ms) => {
               : 'bg-yellow-100 text-yellow-700'"
           class="px-2 py-1 rounded"
         >
-          Summary: {{ video.summary_status || 'pending' }}
+          {{ t('status.labels.summary') }}: {{ statusText(video.summary_status) }}
         </span>
         <span
           :class="video.using_fallback ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'"
           class="px-2 py-1 rounded"
         >
-          Fallback: {{ video.using_fallback ? 'Yes' : 'No' }}
+          {{ t('status.labels.fallback') }}: {{ video.using_fallback ? t('common.yes') : t('common.no') }}
         </span>
         <span
           :class="video.content_quality === 'full'
@@ -142,15 +156,15 @@ const formatTime = (ms) => {
               : 'bg-red-100 text-red-700'"
           class="px-2 py-1 rounded"
         >
-          Quality: {{ video.content_quality || 'summary' }}
+          {{ t('status.labels.quality') }}: {{ qualityText(video.content_quality) }}
         </span>
       </div>
       <div class="mt-4 flex flex-wrap items-center gap-3">
         <div class="flex items-center space-x-2">
-          <label class="text-sm text-gray-600">Content Type</label>
+          <label class="text-sm text-gray-600">{{ t('common.contentType') }}</label>
           <input
             v-model="selectedContentType"
-            placeholder="e.g. insight / howto"
+            :placeholder="t('author.authorTypePlaceholder')"
             class="border rounded px-2 py-1 text-sm"
           />
           <button
@@ -158,7 +172,7 @@ const formatTime = (ms) => {
             :disabled="processing"
             class="px-3 py-1 bg-gray-900 text-white rounded text-xs"
           >
-            Save
+            {{ t('common.save') }}
           </button>
         </div>
         <button 
@@ -166,72 +180,72 @@ const formatTime = (ms) => {
           :disabled="processing"
           class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm"
         >
-          Re-Summarize
+          {{ t('video.resummarize') }}
         </button>
         <button 
           @click="triggerResummarize(true)"
           :disabled="processing"
           class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
         >
-          Re-Summarize (Include Fallback)
+          {{ t('video.resummarizeIncludeFallback') }}
         </button>
         <button 
           @click="triggerReprocessAsr"
           :disabled="processing"
           class="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 text-sm"
         >
-          Re-Fetch Transcript (ASR)
+          {{ t('video.reprocessAsr') }}
         </button>
       </div>
     </div>
 
     <!-- Playback -->
     <div v-if="playbackUrl" class="bg-white shadow rounded-lg p-6">
-      <h3 class="text-lg font-medium text-gray-900 mb-4">Original Audio/Video</h3>
+      <h3 class="text-lg font-medium text-gray-900 mb-4">{{ t('video.originalMedia') }}</h3>
       <audio controls class="w-full" :src="playbackUrl">
-        Your browser does not support the audio element.
+        {{ t('video.audioNotSupported') }}
       </audio>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Summary -->
       <div class="bg-white shadow rounded-lg p-6 h-fit">
-        <h3 class="text-lg font-medium text-gray-900 mb-4 border-b pb-2">Summary</h3>
+        <h3 class="text-lg font-medium text-gray-900 mb-4 border-b pb-2">{{ t('video.summaryTitle') }}</h3>
         <div v-if="summary" class="prose max-w-none text-sm">
             <div v-if="summaryNormalized && summaryNormalized.one_liner" class="mb-4 bg-blue-50 p-3 rounded">
-                <strong>One Liner:</strong> {{ summaryNormalized.one_liner }}
+                <strong>{{ t('video.oneLiner') }}:</strong> {{ summaryNormalized.one_liner }}
             </div>
             
             <div v-if="summaryNormalized && summaryNormalized.key_points">
-                <strong>Key Points:</strong>
+                <strong>{{ t('video.keyPoints') }}:</strong>
                 <ul class="list-disc pl-5 space-y-1 mt-2">
                     <li v-for="(point, idx) in summaryNormalized.key_points" :key="idx">{{ point }}</li>
                 </ul>
             </div>
 
             <div v-if="summaryNormalized && summaryNormalized.principles && summaryNormalized.principles.length" class="mt-4">
-                <strong>Core Principles:</strong>
+                <strong>{{ t('video.corePrinciples') }}:</strong>
                 <ul class="list-disc pl-5 space-y-1 mt-2">
                     <li v-for="(item, idx) in summaryNormalized.principles" :key="`p-${idx}`">{{ item }}</li>
                 </ul>
             </div>
 
             <div v-if="summaryNormalized && summaryNormalized.actionable_guidelines && summaryNormalized.actionable_guidelines.length" class="mt-4">
-                <strong>Actionable Guidelines:</strong>
+                <strong>{{ t('video.actionableGuidelines') }}:</strong>
                 <ul class="list-disc pl-5 space-y-1 mt-2">
                     <li v-for="(item, idx) in summaryNormalized.actionable_guidelines" :key="`a-${idx}`">{{ item }}</li>
                 </ul>
             </div>
 
             <div v-if="summaryNormalized && summaryNormalized.cognitive_warnings && summaryNormalized.cognitive_warnings.length" class="mt-4">
-                <strong>Cognitive Warnings:</strong>
+                <strong>{{ t('video.cognitiveWarnings') }}:</strong>
                 <ul class="list-disc pl-5 space-y-1 mt-2">
                     <li v-for="(item, idx) in summaryNormalized.cognitive_warnings" :key="`w-${idx}`">{{ item }}</li>
                 </ul>
             </div>
 
             <div v-if="summaryNormalized && summaryNormalized.case_studies && summaryNormalized.case_studies.length" class="mt-4">
-                <strong>Case Studies:</strong>
+                <strong>{{ t('video.caseStudies') }}:</strong>
                 <div class="mt-2 space-y-3">
                     <div v-for="(item, idx) in summaryNormalized.case_studies" :key="`c-${idx}`" class="rounded border border-gray-200 p-3">
                         <div v-if="item.description" class="text-gray-800">{{ item.description }}</div>
@@ -249,12 +263,12 @@ const formatTime = (ms) => {
                 {{ summary.content }}
             </div>
         </div>
-        <div v-else class="text-gray-500 italic">No summary available.</div>
+        <div v-else class="text-gray-500 italic">{{ t('video.noSummary') }}</div>
       </div>
 
       <!-- Transcript -->
       <div class="bg-white shadow rounded-lg p-6 max-h-[800px] overflow-y-auto">
-        <h3 class="text-lg font-medium text-gray-900 mb-4 border-b pb-2">Transcript</h3>
+        <h3 class="text-lg font-medium text-gray-900 mb-4 border-b pb-2">{{ t('video.transcriptTitle') }}</h3>
         <div v-if="segments.length > 0" class="space-y-4">
             <div v-for="seg in segments" :key="seg.id" class="text-sm">
                 <div class="text-xs text-gray-400 mb-1">
@@ -263,7 +277,7 @@ const formatTime = (ms) => {
                 <p class="text-gray-800">{{ seg.text }}</p>
             </div>
         </div>
-        <div v-else class="text-gray-500 italic">No transcript segments available.</div>
+        <div v-else class="text-gray-500 italic">{{ t('video.noTranscript') }}</div>
       </div>
     </div>
   </div>

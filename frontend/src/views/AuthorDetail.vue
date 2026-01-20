@@ -1,11 +1,13 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import api from '../api'
 import MarkdownIt from 'markdown-it'
 
 const route = useRoute()
 const md = new MarkdownIt()
+const { t, locale } = useI18n()
 
 const author = ref(null)
 const report = ref(null)
@@ -46,6 +48,9 @@ const fetchData = async () => {
   }
 }
 
+const statusText = (status) => t(`status.values.${status || 'pending'}`)
+const qualityText = (quality) => t(`status.values.${quality || 'summary'}`)
+
 onMounted(fetchData)
 
 const activeReport = computed(() => {
@@ -75,9 +80,18 @@ const statusClass = (status) => {
 }
 
 const renderReport = computed(() => {
-  if (!activeReport.value || !activeReport.value.content) return 'No report generated yet.'
+  if (!activeReport.value || !activeReport.value.content) return t('author.noReport')
   return md.render(activeReport.value.content)
 })
+
+const formatDate = (value) => {
+  if (!value) return ''
+  try {
+    return new Intl.DateTimeFormat(locale.value).format(new Date(value))
+  } catch (e) {
+    return new Date(value).toLocaleDateString()
+  }
+}
 
 const saveAuthorType = async () => {
   processing.value = true
@@ -85,20 +99,20 @@ const saveAuthorType = async () => {
     await api.setAuthorType(authorId, { author_type: selectedAuthorType.value || null })
     await fetchData()
   } catch (e) {
-    alert('Failed: ' + e.message)
+    alert(t('common.failedPrefix') + e.message)
   } finally {
     processing.value = false
   }
 }
 
 const triggerRegenerateReport = async () => {
-  if (!confirm('Regenerate author report? This may take a while.')) return
+  if (!confirm(t('author.confirmRegenerateReport'))) return
   processing.value = true
   try {
     await api.regenerateReport(authorId)
-    alert('Task started. Check back later.')
+    alert(t('common.checkBackLater'))
   } catch (e) {
-    alert('Failed: ' + e.message)
+    alert(t('common.failedPrefix') + e.message)
   } finally {
     processing.value = false
   }
@@ -107,28 +121,28 @@ const triggerRegenerateReport = async () => {
 const triggerResummarizeAll = async (includeFallback = false) => {
   const includeFallbackFlag = includeFallback instanceof Event ? false : includeFallback
   const message = includeFallbackFlag
-    ? 'Re-summarize ALL videos (including fallback transcripts)?'
-    : 'Re-summarize ALL videos? This is a heavy operation.'
+    ? t('author.confirmResummarizeAllIncludeFallback')
+    : t('author.confirmResummarizeAll')
   if (!confirm(message)) return
   processing.value = true
   try {
     await api.resummarizeAll(authorId, includeFallbackFlag)
-    alert('Batch task started.')
+    alert(t('common.batchTaskStarted'))
   } catch (e) {
-    alert('Failed: ' + e.message)
+    alert(t('common.failedPrefix') + e.message)
   } finally {
     processing.value = false
   }
 }
 
 const triggerReprocessAsr = async () => {
-  if (!confirm('Re-fetch transcripts (ASR/subtitles) for this author?')) return
+  if (!confirm(t('author.confirmReprocessAsr'))) return
   processing.value = true
   try {
     await api.reprocessAuthorAsr(authorId)
-    alert('Transcript reprocess started.')
+    alert(t('common.transcriptReprocessStarted'))
   } catch (e) {
-    alert('Failed: ' + e.message)
+    alert(t('common.failedPrefix') + e.message)
   } finally {
     processing.value = false
   }
@@ -136,7 +150,7 @@ const triggerReprocessAsr = async () => {
 </script>
 
 <template>
-  <div v-if="loading" class="text-center py-10">Loading...</div>
+  <div v-if="loading" class="text-center py-10">{{ t('common.loading') }}</div>
   <div v-else class="space-y-6">
     <!-- Header -->
     <div class="bg-white shadow rounded-lg p-6">
@@ -155,48 +169,48 @@ const triggerReprocessAsr = async () => {
           </p>
           <div v-if="authorStatus" class="mt-3 flex flex-wrap gap-2 text-xs">
             <span class="px-2 py-1 rounded bg-gray-100 text-gray-700">
-              Videos: {{ authorStatus.total_videos }}
+              {{ t('author.status.videos') }}: {{ authorStatus.total_videos }}
             </span>
             <span class="px-2 py-1 rounded bg-green-100 text-green-700">
-              ASR ready: {{ authorStatus.asr_status_counts.ready }}
+              {{ t('author.status.asrReady') }}: {{ authorStatus.asr_status_counts.ready }}
             </span>
             <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
-              ASR fallback: {{ authorStatus.asr_status_counts.fallback }}
+              {{ t('author.status.asrFallback') }}: {{ authorStatus.asr_status_counts.fallback }}
             </span>
             <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
-              ASR pending: {{ authorStatus.asr_status_counts.pending }}
+              {{ t('author.status.asrPending') }}: {{ authorStatus.asr_status_counts.pending }}
             </span>
             <span class="px-2 py-1 rounded bg-red-100 text-red-700">
-              ASR missing: {{ authorStatus.asr_status_counts.missing }}
+              {{ t('author.status.asrMissing') }}: {{ authorStatus.asr_status_counts.missing }}
             </span>
             <span class="px-2 py-1 rounded bg-green-100 text-green-700">
-              Summary ready: {{ authorStatus.summary_status_counts.ready }}
+              {{ t('author.status.summaryReady') }}: {{ authorStatus.summary_status_counts.ready }}
             </span>
             <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
-              Summary pending: {{ authorStatus.summary_status_counts.pending }}
+              {{ t('author.status.summaryPending') }}: {{ authorStatus.summary_status_counts.pending }}
             </span>
             <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
-              Summary skipped: {{ authorStatus.summary_status_counts.skipped_fallback }}
+              {{ t('author.status.summarySkipped') }}: {{ authorStatus.summary_status_counts.skipped_fallback }}
             </span>
             <span class="px-2 py-1 rounded bg-red-100 text-red-700">
-              Summary blocked: {{ authorStatus.summary_status_counts.blocked }}
+              {{ t('author.status.summaryBlocked') }}: {{ authorStatus.summary_status_counts.blocked }}
             </span>
             <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-              Quality full: {{ authorStatus.content_quality_counts.full }}
+              {{ t('author.status.qualityFull') }}: {{ authorStatus.content_quality_counts.full }}
             </span>
             <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-              Quality summary: {{ authorStatus.content_quality_counts.summary }}
+              {{ t('author.status.qualitySummary') }}: {{ authorStatus.content_quality_counts.summary }}
             </span>
             <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-              Quality missing: {{ authorStatus.content_quality_counts.missing }}
+              {{ t('author.status.qualityMissing') }}: {{ authorStatus.content_quality_counts.missing }}
             </span>
           </div>
           <div class="mt-4 flex flex-wrap items-center gap-3">
             <div class="flex items-center space-x-2">
-              <label class="text-sm text-gray-600">Author Type</label>
+              <label class="text-sm text-gray-600">{{ t('author.authorTypeLabel') }}</label>
               <input
                 v-model="selectedAuthorType"
-                placeholder="e.g. insight / howto"
+                :placeholder="t('author.authorTypePlaceholder')"
                 class="border rounded px-2 py-1 text-sm"
               />
               <button
@@ -204,7 +218,7 @@ const triggerReprocessAsr = async () => {
                 :disabled="processing"
                 class="px-3 py-1 bg-gray-900 text-white rounded text-xs"
               >
-                Save
+                {{ t('common.save') }}
               </button>
             </div>
             <button 
@@ -212,28 +226,28 @@ const triggerReprocessAsr = async () => {
               :disabled="processing"
               class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm"
             >
-              Regenerate Report
+              {{ t('author.regenerateReport') }}
             </button>
             <button 
               @click="triggerResummarizeAll"
               :disabled="processing"
               class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 text-sm"
             >
-              Re-Summarize All Videos
+              {{ t('author.resummarizeAll') }}
             </button>
             <button 
               @click="triggerResummarizeAll(true)"
               :disabled="processing"
               class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
             >
-              Re-Summarize (Include Fallback)
+              {{ t('author.resummarizeAllIncludeFallback') }}
             </button>
             <button 
               @click="triggerReprocessAsr"
               :disabled="processing"
               class="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 text-sm"
             >
-              Re-Fetch Transcripts (ASR)
+              {{ t('author.reprocessAsr') }}
             </button>
           </div>
         </div>
@@ -247,13 +261,13 @@ const triggerReprocessAsr = async () => {
           @click="activeTab = 'report'"
           :class="[activeTab === 'report' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']"
         >
-          Analysis Report
+          {{ t('author.analysisReportTab') }}
         </button>
         <button 
           @click="activeTab = 'videos'"
           :class="[activeTab === 'videos' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']"
         >
-          Videos ({{ videos.length }})
+          {{ t('author.videosTab') }} ({{ videos.length }})
         </button>
       </nav>
     </div>
@@ -261,7 +275,7 @@ const triggerReprocessAsr = async () => {
     <!-- Content -->
     <div v-if="activeTab === 'report'" class="bg-white shadow rounded-lg p-6">
       <div v-if="reportTypes.length" class="mb-4 flex flex-wrap items-center gap-2">
-        <span class="text-sm text-gray-600">Report Type:</span>
+        <span class="text-sm text-gray-600">{{ t('common.reportType') }}:</span>
         <button
           v-for="type in reportTypes"
           :key="type"
@@ -283,22 +297,22 @@ const triggerReprocessAsr = async () => {
                 {{ video.title }}
               </h4>
               <p class="text-sm text-gray-500 mt-1">
-                Published: {{ new Date(video.published_at).toLocaleDateString() }} |
-                Type: {{ video.type }} |
-                Content Type: {{ video.content_type || 'generic' }}
+                {{ t('common.published') }}: {{ formatDate(video.published_at) }} |
+                {{ t('common.type') }}: {{ video.type }} |
+                {{ t('common.contentType') }}: {{ video.content_type || 'generic' }}
               </p>
               <div class="mt-2 flex flex-wrap gap-2 text-xs">
                 <span :class="statusClass(video.asr_status)" class="px-2 py-1 rounded">
-                  ASR: {{ video.asr_status || 'pending' }}
+                  {{ t('status.labels.asr') }}: {{ statusText(video.asr_status) }}
                 </span>
                 <span :class="statusClass(video.summary_status)" class="px-2 py-1 rounded">
-                  Summary: {{ video.summary_status || 'pending' }}
+                  {{ t('status.labels.summary') }}: {{ statusText(video.summary_status) }}
                 </span>
                 <span
                   :class="video.using_fallback ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'"
                   class="px-2 py-1 rounded"
                 >
-                  Fallback: {{ video.using_fallback ? 'Yes' : 'No' }}
+                  {{ t('status.labels.fallback') }}: {{ video.using_fallback ? t('common.yes') : t('common.no') }}
                 </span>
                 <span
                   :class="video.content_quality === 'full'
@@ -308,7 +322,7 @@ const triggerReprocessAsr = async () => {
                       : 'bg-red-100 text-red-700'"
                   class="px-2 py-1 rounded"
                 >
-                  Quality: {{ video.content_quality || 'summary' }}
+                  {{ t('status.labels.quality') }}: {{ qualityText(video.content_quality) }}
                 </span>
               </div>
             </div>
@@ -317,7 +331,7 @@ const triggerReprocessAsr = async () => {
                  @click="$router.push(`/videos/${video.id}`)"
                  class="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
                >
-                 View Details
+                 {{ t('common.viewDetails') }}
                </button>
             </div>
           </div>

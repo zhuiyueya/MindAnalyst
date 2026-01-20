@@ -1,0 +1,132 @@
+{
+  "nav": {
+    "appName": "Mind Analyst",
+    "authors": "作者",
+    "ingest": "采集",
+    "chat": "对话",
+    "language": "语言",
+    "languageZh": "中文",
+    "languageEn": "English"
+  },
+  "dashboard": {
+    "title": "欢迎使用 Mind Analyst",
+    "subtitle": "你的 Bilibili 创作者知识库。",
+    "exploreAuthors": "浏览作者",
+    "ingestContent": "采集内容"
+  },
+  "common": {
+    "loading": "加载中...",
+    "save": "保存",
+    "processing": "处理中...",
+    "taskStarted": "任务已启动。",
+    "checkBackLater": "任务已启动，请稍后查看。",
+    "batchTaskStarted": "批量任务已启动。",
+    "transcriptReprocessStarted": "转写重抓已开始。",
+    "failedPrefix": "失败：",
+    "published": "发布时间",
+    "type": "类型",
+    "contentType": "内容类型",
+    "reportType": "报告类型",
+    "videos": "视频",
+    "viewDetails": "查看详情",
+    "yes": "是",
+    "no": "否",
+    "originalLink": "原始链接"
+  },
+  "status": {
+    "labels": {
+      "asr": "ASR",
+      "summary": "摘要",
+      "fallback": "回退",
+      "quality": "质量"
+    },
+    "values": {
+      "ready": "已就绪",
+      "pending": "处理中",
+      "fallback": "回退",
+      "missing": "缺失",
+      "blocked": "阻塞",
+      "skipped_fallback": "已跳过回退",
+      "full": "完整",
+      "summary": "摘要"
+    }
+  },
+  "authors": {
+    "title": "作者",
+    "platform": "平台"
+  },
+  "author": {
+    "authorTypeLabel": "作者类型",
+    "authorTypePlaceholder": "例如：insight / howto",
+    "regenerateReport": "重新生成报告",
+    "resummarizeAll": "重新总结全部视频",
+    "resummarizeAllIncludeFallback": "重新总结（包含回退转写）",
+    "reprocessAsr": "重新抓取转写（ASR）",
+    "confirmRegenerateReport": "重新生成作者报告？这可能需要一段时间。",
+    "confirmResummarizeAll": "重新总结全部视频？这是一个较重的操作。",
+    "confirmResummarizeAllIncludeFallback": "重新总结全部视频（包含回退转写）？",
+    "confirmReprocessAsr": "重新抓取该作者的转写（ASR/字幕）？",
+    "analysisReportTab": "分析报告",
+    "videosTab": "视频",
+    "noReport": "暂无报告。",
+    "status": {
+      "videos": "视频数",
+      "asrReady": "ASR 完成",
+      "asrFallback": "ASR 回退",
+      "asrPending": "ASR 处理中",
+      "asrMissing": "ASR 缺失",
+      "summaryReady": "摘要完成",
+      "summaryPending": "摘要处理中",
+      "summarySkipped": "摘要跳过回退",
+      "summaryBlocked": "摘要阻塞",
+      "qualityFull": "内容完整",
+      "qualitySummary": "内容摘要",
+      "qualityMissing": "内容缺失"
+    }
+  },
+  "video": {
+    "originalMedia": "原始音频/视频",
+    "audioNotSupported": "你的浏览器不支持音频播放。",
+    "summaryTitle": "摘要",
+    "oneLiner": "一句话总结",
+    "keyPoints": "关键要点",
+    "corePrinciples": "核心原则",
+    "actionableGuidelines": "可执行建议",
+    "cognitiveWarnings": "认知提醒",
+    "caseStudies": "案例",
+    "noSummary": "暂无摘要。",
+    "transcriptTitle": "转写",
+    "noTranscript": "暂无转写片段。",
+    "resummarize": "重新总结",
+    "resummarizeIncludeFallback": "重新总结（包含回退转写）",
+    "reprocessAsr": "重新抓取转写（ASR）",
+    "confirmResummarize": "重新总结该视频？",
+    "confirmResummarizeIncludeFallback": "重新总结该视频（包含回退转写）？",
+    "confirmReprocessAsr": "重新抓取该视频的转写（ASR/字幕）？"
+  },
+  "ingest": {
+    "title": "采集作者视频",
+    "midLabel": "Bilibili 作者 MID",
+    "midPlaceholder": "44497027",
+    "midHelp": "输入作者主页 URL 中的数字 ID。",
+    "limitLabel": "分析视频数量上限",
+    "start": "开始采集",
+    "success": "成功：{message}。任务 ID：{taskId}",
+    "error": "失败：{message}",
+    "howItWorksTitle": "工作流程：",
+    "step1": "系统将打开浏览器访问作者的 Space 页面。",
+    "step2": "提取视频链接（最多为你设置的数量）。",
+    "step3": "对每个视频下载音频、转写并向量化内容。",
+    "step4": "完成后即可在对话页与该作者进行交流。"
+  },
+  "chat": {
+    "welcome": "你好！我是你的 Mind Analyst，可以向我提问已采集的视频内容。",
+    "toolbarLabel": "当前作者：",
+    "allAuthors": "全部作者",
+    "refreshAuthors": "刷新作者列表",
+    "sources": "来源：",
+    "askPlaceholder": "请输入问题...",
+    "send": "发送",
+    "errorPrefix": "错误："
+  }
+}

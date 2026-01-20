@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 
 const mid = ref('')
@@ -7,6 +8,7 @@ const limit = ref(10)
 const isLoading = ref(false)
 const message = ref('')
 const error = ref('')
+const { t } = useI18n()
 
 const handleIngest = async () => {
   if (!mid.value.trim()) return
@@ -20,10 +22,10 @@ const handleIngest = async () => {
       author_id: mid.value.trim(),
       limit: limit.value
     })
-    message.value = `Success: ${res.data.message}. Task ID: ${res.data.task_id}`
+    message.value = t('ingest.success', { message: res.data.message, taskId: res.data.task_id ?? '-' })
     mid.value = ''
   } catch (e) {
-    error.value = e.response?.data?.detail || e.message
+    error.value = t('ingest.error', { message: e.response?.data?.detail || e.message })
   } finally {
     isLoading.value = false
   }
@@ -32,11 +34,11 @@ const handleIngest = async () => {
 
 <template>
   <div class="p-6 flex flex-col h-full max-w-2xl mx-auto w-full">
-    <h2 class="text-xl font-semibold mb-6">Ingest Author Videos</h2>
+    <h2 class="text-xl font-semibold mb-6">{{ t('ingest.title') }}</h2>
     
     <div class="bg-white p-6 rounded-lg shadow-sm border space-y-6">
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Bilibili Author MID</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('ingest.midLabel') }}</label>
         <div class="flex">
           <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
             space.bilibili.com/
@@ -45,14 +47,14 @@ const handleIngest = async () => {
             v-model="mid"
             type="text"
             class="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            placeholder="44497027"
+            :placeholder="t('ingest.midPlaceholder')"
           />
         </div>
-        <p class="mt-1 text-xs text-gray-500">Enter the numeric ID from the author's homepage URL.</p>
+        <p class="mt-1 text-xs text-gray-500">{{ t('ingest.midHelp') }}</p>
       </div>
       
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Max Videos to Analyze</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('ingest.limitLabel') }}</label>
         <input 
           v-model.number="limit"
           type="number"
@@ -70,7 +72,7 @@ const handleIngest = async () => {
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        {{ isLoading ? 'Processing...' : 'Start Ingestion' }}
+        {{ isLoading ? t('common.processing') : t('ingest.start') }}
       </button>
     </div>
 
@@ -89,12 +91,12 @@ const handleIngest = async () => {
     </div>
     
     <div class="mt-8 text-sm text-gray-500 bg-gray-50 p-4 rounded-md">
-      <h3 class="font-medium text-gray-900 mb-2">How it works:</h3>
+      <h3 class="font-medium text-gray-900 mb-2">{{ t('ingest.howItWorksTitle') }}</h3>
       <ol class="list-decimal list-inside space-y-1">
-        <li>The system will open a browser to visit the author's Space page.</li>
-        <li>It will extract video links (up to the limit you set).</li>
-        <li>For each video, it downloads the audio, transcribes it, and vectorizes the content.</li>
-        <li>Once finished, you can chat with this author's "digital twin" in the Chat tab.</li>
+        <li>{{ t('ingest.step1') }}</li>
+        <li>{{ t('ingest.step2') }}</li>
+        <li>{{ t('ingest.step3') }}</li>
+        <li>{{ t('ingest.step4') }}</li>
       </ol>
     </div>
   </div>

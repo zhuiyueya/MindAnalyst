@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import api from '../api'
 
 const authors = ref([])
 const loading = ref(true)
+const { t } = useI18n()
 
 onMounted(async () => {
   try {
@@ -20,10 +22,10 @@ onMounted(async () => {
 <template>
   <div class="space-y-6">
     <div class="flex justify-between items-center">
-      <h2 class="text-2xl font-bold text-gray-900">Authors</h2>
+      <h2 class="text-2xl font-bold text-gray-900">{{ t('authors.title') }}</h2>
     </div>
 
-    <div v-if="loading" class="text-center py-10 text-gray-500">Loading...</div>
+    <div v-if="loading" class="text-center py-10 text-gray-500">{{ t('common.loading') }}</div>
     
     <div v-else class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
       <div 
@@ -48,44 +50,44 @@ onMounted(async () => {
               {{ author.name }}
             </h3>
             <p class="text-sm text-gray-500 truncate">
-              Platform: {{ author.platform }}
+              {{ t('authors.platform') }}: {{ author.platform }}
             </p>
             <div v-if="author.author_status" class="mt-2 flex flex-wrap gap-2 text-xs">
               <span class="px-2 py-1 rounded bg-gray-100 text-gray-700">
-                Videos: {{ author.author_status.total_videos }}
+                {{ t('author.status.videos') }}: {{ author.author_status.total_videos }}
               </span>
               <span class="px-2 py-1 rounded bg-green-100 text-green-700">
-                ASR ready: {{ author.author_status.asr_status_counts.ready }}
+                {{ t('author.status.asrReady') }}: {{ author.author_status.asr_status_counts.ready }}
               </span>
               <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
-                ASR fallback: {{ author.author_status.asr_status_counts.fallback }}
+                {{ t('author.status.asrFallback') }}: {{ author.author_status.asr_status_counts.fallback }}
               </span>
               <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
-                ASR pending: {{ author.author_status.asr_status_counts.pending }}
+                {{ t('author.status.asrPending') }}: {{ author.author_status.asr_status_counts.pending }}
               </span>
               <span class="px-2 py-1 rounded bg-red-100 text-red-700">
-                ASR missing: {{ author.author_status.asr_status_counts.missing }}
+                {{ t('author.status.asrMissing') }}: {{ author.author_status.asr_status_counts.missing }}
               </span>
               <span class="px-2 py-1 rounded bg-green-100 text-green-700">
-                Summary ready: {{ author.author_status.summary_status_counts.ready }}
+                {{ t('author.status.summaryReady') }}: {{ author.author_status.summary_status_counts.ready }}
               </span>
               <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
-                Summary pending: {{ author.author_status.summary_status_counts.pending }}
+                {{ t('author.status.summaryPending') }}: {{ author.author_status.summary_status_counts.pending }}
               </span>
               <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
-                Summary skipped: {{ author.author_status.summary_status_counts.skipped_fallback }}
+                {{ t('author.status.summarySkipped') }}: {{ author.author_status.summary_status_counts.skipped_fallback }}
               </span>
               <span class="px-2 py-1 rounded bg-red-100 text-red-700">
-                Summary blocked: {{ author.author_status.summary_status_counts.blocked }}
+                {{ t('author.status.summaryBlocked') }}: {{ author.author_status.summary_status_counts.blocked }}
               </span>
               <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-                Quality full: {{ author.author_status.content_quality_counts.full }}
+                {{ t('author.status.qualityFull') }}: {{ author.author_status.content_quality_counts.full }}
               </span>
               <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-                Quality summary: {{ author.author_status.content_quality_counts.summary }}
+                {{ t('author.status.qualitySummary') }}: {{ author.author_status.content_quality_counts.summary }}
               </span>
               <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-                Quality missing: {{ author.author_status.content_quality_counts.missing }}
+                {{ t('author.status.qualityMissing') }}: {{ author.author_status.content_quality_counts.missing }}
               </span>
             </div>
           </div>
