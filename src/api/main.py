@@ -471,14 +471,8 @@ async def ingest_author(
     if "bilibili.com" in req.author_id or "http" in req.author_id:
         use_browser = True
     else:
-        # If just MID, also use browser?
-        # Construct a URL for it to force browser usage
-        # Or just set use_browser = True and handle MID in ingestion
-        # But ingest_from_browser expects a URL.
-        # Let's convert MID to URL here if we want to force browser.
-        # req.author_id = f"https://space.bilibili.com/{req.author_id}"
-        # use_browser = True
-        pass # Keep old logic for now, user should provide URL if they want browser
+        req.author_id = f"https://space.bilibili.com/{req.author_id}"
+        use_browser = True
     
     # We need a new session for background task since the dep session closes
     # But BackgroundTasks with async functions is tricky with sessions.
