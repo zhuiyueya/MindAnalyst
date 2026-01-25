@@ -6,6 +6,8 @@ from openai import AsyncOpenAI
 from src.core.config import settings
 from src.prompts.manager import PromptManager
 from src.prompts.registry import PromptRegistry
+from src.database.db import get_session
+from src.models.models import LLMCallLog
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,66 @@ class LLMService:
         if value is None:
             return ""
         return str(value)
+
+    def _usage_to_dict(self, usage: Any) -> Dict[str, Any]:
+        if not usage:
+            return {}
+        if isinstance(usage, dict):
+            return usage
+        if hasattr(usage, "model_dump"):
+            return usage.model_dump()
+        if hasattr(usage, "dict"):
+            return usage.dict()
+        return {
+            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+            "completion_tokens": getattr(usage, "completion_tokens", None),
+            "total_tokens": getattr(usage, "total_tokens", None)
+        }
+
+    async def _log_call(
+        self,
+        task_type: str,
+        content_type: Optional[str],
+        profile_key: Optional[str],
+        system_prompt: str,
+        user_prompt: str,
+        model: Optional[str],
+        request_meta: Optional[Dict[str, Any]] = None,
+        response_text: Optional[str] = None,
+        response_meta: Optional[Dict[str, Any]] = None,
+        usage: Any = None,
+        status: str = "success",
+        error_message: Optional[str] = None
+    ) -> None:
+        usage_dict = self._usage_to_dict(usage)
+        response_meta = response_meta or {}
+        if usage_dict:
+            response_meta = {**response_meta, "usage": usage_dict}
+
+        log_entry = LLMCallLog(
+            task_type=task_type,
+            content_type=content_type,
+            profile_key=profile_key,
+            model=model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            request_meta=request_meta or {},
+            response_text=response_text,
+            response_meta=response_meta,
+            prompt_tokens=usage_dict.get("prompt_tokens"),
+            completion_tokens=usage_dict.get("completion_tokens"),
+            total_tokens=usage_dict.get("total_tokens"),
+            status=status,
+            error_message=error_message
+        )
+
+        try:
+            async for session in get_session():
+                session.add(log_entry)
+                await session.commit()
+                break
+        except Exception as exc:
+            logger.warning(f"Failed to log LLM call: {exc}")
 
     def _is_v2_summary(self, profile_key: str) -> bool:
         return "summary_single/v2" in profile_key or profile_key == "video_summary/v2"
@@ -96,8 +158,14 @@ class LLMService:
         if not profile_key:
             logger.warning("No content.classify profile configured")
             return None
-
-        prompts = self.prompt_manager.get_prompt(profile_key, text=text[:20000])
+        content = None
+        truncated_text = text[:20000]
+        prompts = self.prompt_manager.get_prompt(profile_key, text=truncated_text)
+        request_meta = {
+            "input_chars": len(text),
+            "input_char_limit": 20000,
+            "input_truncated": len(text) > 20000
+        }
         if not self.client:
             return None
 
@@ -113,8 +181,32 @@ class LLMService:
             content = response.choices[0].message.content
             data = json.loads(content)
             value = data.get("content_type") if isinstance(data, dict) else None
+            await self._log_call(
+                task_type="content.classify",
+                content_type=None,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=getattr(response, "model", self.model),
+                request_meta=request_meta,
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
             return self._ensure_str(value) if value else None
         except Exception as e:
+            await self._log_call(
+                task_type="content.classify",
+                content_type=None,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=self.model,
+                request_meta=request_meta,
+                response_text=content,
+                status="error",
+                error_message=str(e)
+            )
             logger.error(f"Content classify failed: {e}")
             return None
 
@@ -132,8 +224,15 @@ class LLMService:
             raw = {"summary": "LLM not configured", "key_points": []}
             normalized = self._normalize_summary(raw, profile_key, resolved_type)
             return {"raw": raw, "normalized": normalized, "profile": profile_key, "content_type": resolved_type}
-
-        prompts = self.prompt_manager.get_prompt(profile_key, text=text[:30000])
+        content = None
+        truncated_text = text[:30000]
+        prompts = self.prompt_manager.get_prompt(profile_key, text=truncated_text)
+        request_meta = {
+            "input_chars": len(text),
+            "input_char_limit": 30000,
+            "input_truncated": len(text) > 30000,
+            "task_type": task_type
+        }
         
         try:
             response = await self.client.chat.completions.create(
@@ -147,8 +246,32 @@ class LLMService:
             content = response.choices[0].message.content
             raw = json.loads(content)
             normalized = self._normalize_summary(raw, profile_key, resolved_type)
+            await self._log_call(
+                task_type=task_type,
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=getattr(response, "model", self.model),
+                request_meta=request_meta,
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
             return {"raw": raw, "normalized": normalized, "profile": profile_key, "content_type": resolved_type}
         except Exception as e:
+            await self._log_call(
+                task_type=task_type,
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=self.model,
+                request_meta=request_meta,
+                response_text=content,
+                status="error",
+                error_message=str(e)
+            )
             logger.error(f"Summary generation failed: {e}")
             return {"error": str(e)}
 
@@ -172,8 +295,15 @@ class LLMService:
             one_liner = normalized.get("one_liner", "")
             key_points = normalized.get("key_points", [])
             context_text += f"视频{i+1}摘要: {one_liner}\n观点: {'; '.join(key_points)}\n\n"
-            
-        prompts = self.prompt_manager.get_prompt(profile_key, context=context_text[:30000])
+        content = None
+        truncated_context = context_text[:30000]
+        prompts = self.prompt_manager.get_prompt(profile_key, context=truncated_context)
+        request_meta = {
+            "summary_count": len(summaries),
+            "context_chars": len(context_text),
+            "context_char_limit": 30000,
+            "context_truncated": len(context_text) > 30000
+        }
         
         try:
             response = await self.client.chat.completions.create(
@@ -186,8 +316,32 @@ class LLMService:
             )
             content = response.choices[0].message.content
             raw = json.loads(content)
+            await self._log_call(
+                task_type="report.author",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=getattr(response, "model", self.model),
+                request_meta=request_meta,
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
             return {"raw": raw, "profile": profile_key, "content_type": resolved_type}
         except Exception as e:
+            await self._log_call(
+                task_type="report.author",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=self.model,
+                request_meta=request_meta,
+                response_text=content,
+                status="error",
+                error_message=str(e)
+            )
             logger.error(f"Report generation failed: {e}")
             return {"error": str(e)}
 
@@ -210,6 +364,14 @@ class LLMService:
             documents=documents, 
             top_n=top_n
         )
+        request_meta = {
+            "query_chars": len(query),
+            "document_count": len(documents),
+            "documents_chars_total": sum(len(doc) for doc in documents),
+            "top_n": top_n,
+            "system_prompt_used": False,
+            "template_system_prompt": prompts.get("system", "")
+        }
         
         try:
             response = await self.client.chat.completions.create(
@@ -217,10 +379,34 @@ class LLMService:
                 messages=[{"role": "user", "content": prompts["user"]}],
                 response_format={"type": "json_object"}
             )
-            result = json.loads(response.choices[0].message.content)
+            content = response.choices[0].message.content
+            result = json.loads(content)
+            await self._log_call(
+                task_type="rag.rerank",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt="",
+                user_prompt=prompts["user"],
+                model=getattr(response, "model", self.model),
+                request_meta=request_meta,
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
             indices = result.get("indices", [])
             return [int(i) for i in indices if isinstance(i, (int, str)) and int(i) < len(documents)]
         except Exception as e:
+            await self._log_call(
+                task_type="rag.rerank",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt="",
+                user_prompt=prompts["user"],
+                model=self.model,
+                request_meta=request_meta,
+                status="error",
+                error_message=str(e)
+            )
             logger.error(f"Rerank failed: {e}")
             return list(range(min(len(documents), top_n)))
 
@@ -234,7 +420,10 @@ class LLMService:
         prompts = self.prompt_manager.get_prompt(profile_key, query=query, context_str=context_str)
         if not self.client:
             return "【模拟回答】基于片段 [1]，作者提到了相关概念。\n(请配置 OPENAI_API_KEY 以启用真实 LLM 回答)"
-
+        request_meta = {
+            "query_chars": len(query),
+            "context_chars": len(context_str)
+        }
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -243,7 +432,31 @@ class LLMService:
                     {"role": "user", "content": prompts["user"]}
                 ]
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            await self._log_call(
+                task_type="rag.answer",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=getattr(response, "model", self.model),
+                request_meta=request_meta,
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
+            return content
         except Exception as e:
+            await self._log_call(
+                task_type="rag.answer",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=self.model,
+                request_meta=request_meta,
+                status="error",
+                error_message=str(e)
+            )
             logger.error(f"RAG answer failed: {e}")
             return f"Error calling LLM: {e}"

@@ -41,6 +41,13 @@ const setLocale = (value) => {
           >
             {{ t('nav.chat') }}
           </router-link>
+          <router-link 
+            to="/llm-calls"
+            class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50"
+            active-class="bg-gray-100 text-indigo-600"
+          >
+            {{ t('nav.llmLogs') }}
+          </router-link>
           <div class="flex items-center space-x-2">
             <span class="text-xs text-gray-500">{{ t('nav.language') }}</span>
             <button

@@ -4,6 +4,7 @@
     "authors": "作者",
     "ingest": "采集",
     "chat": "对话",
+    "llmLogs": "LLM 调用日志",
     "language": "语言",
     "languageZh": "中文",
     "languageEn": "English"
@@ -130,5 +131,39 @@
     "askPlaceholder": "请输入问题...",
     "send": "发送",
     "errorPrefix": "错误："
+  },
+  "llmLogs": {
+    "title": "LLM 调用日志",
+    "subtitle": "查看提示词、token 消耗、截断与返回内容。",
+    "refresh": "刷新",
+    "applyFilters": "应用筛选",
+    "resetFilters": "重置",
+    "prev": "上一页",
+    "next": "下一页",
+    "empty": "暂无日志。",
+    "total": "总计：{total}",
+    "truncatedYes": "已截断",
+    "truncatedNo": "未截断",
+    "filters": {
+      "taskType": "任务类型",
+      "contentType": "内容类型",
+      "profileKey": "模板键",
+      "status": "状态",
+      "model": "模型",
+      "limit": "每页数量",
+      "startTime": "开始时间",
+      "endTime": "结束时间"
+    },
+    "fields": {
+      "contentType": "内容类型",
+      "profileKey": "模板键",
+      "model": "模型",
+      "tokens": "Token（提示/补全/总计）",
+      "truncated": "是否截断",
+      "error": "错误",
+      "prompts": "提示词",
+      "response": "模型返回",
+      "meta": "元信息"
+    }
   }
 }

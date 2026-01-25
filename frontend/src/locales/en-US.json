@@ -4,6 +4,7 @@
     "authors": "Authors",
     "ingest": "Ingest",
     "chat": "Chat",
+    "llmLogs": "LLM Logs",
     "language": "Language",
     "languageZh": "中文",
     "languageEn": "English"
@@ -130,5 +131,39 @@
     "askPlaceholder": "Ask a question...",
     "send": "Send",
     "errorPrefix": "Error: "
+  },
+  "llmLogs": {
+    "title": "LLM Call Logs",
+    "subtitle": "Inspect prompts, tokens, truncation and responses.",
+    "refresh": "Refresh",
+    "applyFilters": "Apply Filters",
+    "resetFilters": "Reset",
+    "prev": "Prev",
+    "next": "Next",
+    "empty": "No logs found.",
+    "total": "Total: {total}",
+    "truncatedYes": "Truncated",
+    "truncatedNo": "Not truncated",
+    "filters": {
+      "taskType": "Task Type",
+      "contentType": "Content Type",
+      "profileKey": "Profile Key",
+      "status": "Status",
+      "model": "Model",
+      "limit": "Limit",
+      "startTime": "Start Time",
+      "endTime": "End Time"
+    },
+    "fields": {
+      "contentType": "Content Type",
+      "profileKey": "Profile Key",
+      "model": "Model",
+      "tokens": "Tokens (prompt/completion/total)",
+      "truncated": "Truncation",
+      "error": "Error",
+      "prompts": "Prompts",
+      "response": "Response",
+      "meta": "Metadata"
+    }
   }
 }

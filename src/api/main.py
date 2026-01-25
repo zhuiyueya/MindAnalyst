@@ -2,15 +2,16 @@ from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-from sqlalchemy import delete
+from sqlalchemy import delete, func
 from dotenv import load_dotenv
 import os
+from datetime import datetime
 
 # Load environment variables (for HF_ENDPOINT etc.)
 load_dotenv()
 
 from src.database.db import get_session, init_db
-from src.models.models import Author, ContentItem, Segment, Summary, AuthorReport
+from src.models.models import Author, ContentItem, Segment, Summary, AuthorReport, LLMCallLog
 from src.workflows.ingestion import IngestionWorkflow
 from src.workflows.analysis import AnalysisWorkflow
 from src.adapters.storage.service import StorageService
@@ -51,6 +52,17 @@ def _compute_status_fields(content_quality: str, has_segments: bool, has_summary
         "using_fallback": using_fallback,
         "has_segments": has_segments
     }
+
+def _parse_datetime(value: str) -> datetime:
+    if not value:
+        raise HTTPException(status_code=400, detail="Datetime value is required")
+    try:
+        normalized = value.strip()
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        return datetime.fromisoformat(normalized)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid datetime format: {value}") from exc
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -347,6 +359,57 @@ async def get_video_playback_url(video_id: str, session: AsyncSession = Depends(
         
     url = storage.get_file_url(target_obj)
     return {"url": url}
+
+@app.get("/api/v1/llm_calls")
+async def list_llm_calls(
+    session: AsyncSession = Depends(get_session),
+    task_type: Optional[str] = None,
+    content_type: Optional[str] = None,
+    profile_key: Optional[str] = None,
+    status: Optional[str] = None,
+    model: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    filters = []
+    if task_type:
+        filters.append(LLMCallLog.task_type == task_type)
+    if content_type:
+        filters.append(LLMCallLog.content_type == content_type)
+    if profile_key:
+        filters.append(LLMCallLog.profile_key == profile_key)
+    if status:
+        filters.append(LLMCallLog.status == status)
+    if model:
+        filters.append(LLMCallLog.model == model)
+    if start_time:
+        filters.append(LLMCallLog.created_at >= _parse_datetime(start_time))
+    if end_time:
+        filters.append(LLMCallLog.created_at <= _parse_datetime(end_time))
+
+    count_stmt = select(func.count()).select_from(LLMCallLog)
+    if filters:
+        count_stmt = count_stmt.where(*filters)
+    total = (await session.execute(count_stmt)).scalar_one()
+
+    stmt = select(LLMCallLog).order_by(LLMCallLog.created_at.desc())
+    if filters:
+        stmt = stmt.where(*filters)
+    stmt = stmt.offset(offset).limit(limit)
+    result = await session.execute(stmt)
+    logs = result.scalars().all()
+
+    return {
+        "items": [log.model_dump() for log in logs],
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
 
 @app.post("/api/v1/authors/{author_id}/regenerate_report")
 async def regenerate_author_report(

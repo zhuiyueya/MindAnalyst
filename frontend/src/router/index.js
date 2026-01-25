@@ -5,6 +5,7 @@ import AuthorDetail from '../views/AuthorDetail.vue'
 import VideoDetail from '../views/VideoDetail.vue'
 import IngestPanel from '../components/IngestPanel.vue'
 import ChatPanel from '../components/ChatPanel.vue'
+import LlmCalls from '../views/LlmCalls.vue'
 
 const routes = [
   { path: '/', component: Dashboard },
@@ -13,6 +14,7 @@ const routes = [
   { path: '/authors', component: AuthorList },
   { path: '/authors/:id', component: AuthorDetail },
   { path: '/videos/:id', component: VideoDetail },
+  { path: '/llm-calls', component: LlmCalls },
 ]
 
 const router = createRouter({

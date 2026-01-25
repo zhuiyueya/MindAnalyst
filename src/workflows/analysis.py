@@ -1,6 +1,6 @@
 
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from src.models.models import ContentItem, Segment, Summary, AuthorReport, Author
@@ -47,6 +47,274 @@ class AnalysisWorkflow:
             return "v1"
         tail = profile_key.split("/")[-1]
         return tail if tail.startswith("v") else "v1"
+
+    def _build_author_report_markdown(self, raw: Optional[Dict[str, Any]]) -> str:
+        if not raw:
+            return ""
+        existing = raw.get("report_markdown")
+        if isinstance(existing, str) and existing.strip():
+            return existing
+
+        def _pick(keys: List[str]) -> Any:
+            for key in keys:
+                if key in raw and raw.get(key) not in (None, ""):
+                    return raw.get(key)
+            return None
+
+        def _format_scenarios(value: Any) -> str:
+            if isinstance(value, list):
+                blocks = []
+                for item in value:
+                    if isinstance(item, dict):
+                        scenario = (item.get("scenario") or "").strip()
+                        trigger = (item.get("trigger") or "").strip()
+                        actions = item.get("action_sequence") or []
+                        lines = []
+                        if scenario:
+                            lines.append(f"### {scenario}")
+                        if trigger:
+                            lines.append(f"- 触发信号: {trigger}")
+                        if actions:
+                            if isinstance(actions, list):
+                                actions_md = "\n".join([f"  - {a}" for a in actions if a])
+                                if actions_md:
+                                    lines.append("- 动作序列:\n" + actions_md)
+                            else:
+                                lines.append(f"- 动作序列: {actions}")
+                        block = "\n".join(lines).strip()
+                        if block:
+                            blocks.append(block)
+                    else:
+                        blocks.append(str(item))
+                return "\n\n".join([b for b in blocks if b])
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def _format_playbook(value: Any) -> str:
+            if isinstance(value, list):
+                blocks = []
+                for item in value:
+                    if isinstance(item, dict):
+                        scenario = (item.get("scenario") or "").strip()
+                        author_view = (item.get("author_view") or "").strip()
+                        action = (item.get("do") or "").strip()
+                        avoid = (item.get("avoid") or "").strip()
+                        lines = []
+                        if scenario:
+                            lines.append(f"### {scenario}")
+                        if author_view:
+                            lines.append(f"- 作者立场: {author_view}")
+                        if action:
+                            lines.append(f"- 行动建议: {action}")
+                        if avoid:
+                            lines.append(f"- 避免事项: {avoid}")
+                        block = "\n".join(lines).strip()
+                        if block:
+                            blocks.append(block)
+                    else:
+                        blocks.append(str(item))
+                return "\n\n".join([b for b in blocks if b])
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def _format_critical_tactics(value: Any) -> str:
+            if isinstance(value, list):
+                blocks = []
+                for item in value:
+                    if isinstance(item, dict):
+                        scenario = (item.get("scenario") or "").strip()
+                        fake_hope = (
+                            item.get("fake_hope")
+                            or item.get("fool_think")
+                            or item.get("illusion")
+                            or ""
+                        ).strip()
+                        real_move = (item.get("real_move") or item.get("ruthless_move") or "").strip()
+                        lines = []
+                        if scenario:
+                            lines.append(f"### {scenario}")
+                        if fake_hope:
+                            lines.append(f"- 幻想(坑): {fake_hope}")
+                        if real_move:
+                            lines.append(f"- 破局招数: {real_move}")
+                        block = "\n".join(lines).strip()
+                        if block:
+                            blocks.append(block)
+                    else:
+                        blocks.append(str(item))
+                return "\n\n".join([b for b in blocks if b])
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        core_thesis = _pick(["core_thesis", "一句话总纲", "总纲", "核心论点"])
+        core = _pick([
+            "core_philosophy",
+            "core_survival_logic",
+            "core_logic",
+            "survival_logic",
+            "survival_truth",
+            "核心生存逻辑",
+            "核心生活逻辑",
+            "核心逻辑"
+        ])
+        core_points = _pick(["core_points", "核心观点", "观点清单"])
+        topics = _pick(["main_topics", "主要话题", "topics"]) or []
+        daily_playbook = _pick(["daily_playbook", "日常应用", "playbook"])
+        practical = _pick([
+            "practical_guide",
+            "practical_table",
+            "avoidance_guide",
+            "实战避坑指南",
+            "实战指南"
+        ])
+        critical_tactics = _pick(["critical_tactics", "核心实战策"])
+        decision_matrix = _pick(["decision_matrix", "损益对赌表", "损益决策表"])
+        scenario_algorithms = _pick(["scenario_algorithms", "场景算法"])
+        cost_benefit_table = _pick(["cost_benefit_table", "损益决策表"])
+        tactical_actions = _pick(["tactical_actions", "场景反击动作"])
+        profit_loss_sheet = _pick(["profit_loss_sheet", "p_l_table", "损益核算表"])
+        traps = _pick([
+            "thinking_traps",
+            "cognitive_poison",
+            "认知毒药",
+            "思维陷阱"
+        ])
+        anti_virus = _pick(["anti_virus", "生存补丁"])
+        failure_modes = _pick(["failure_modes", "失败模式分析"])
+        brain_patches = _pick(["brain_patches", "logic_patches", "强力降智补丁"])
+        quick_checks = _pick(["quick_checks", "日常判断口诀", "判断口诀"])
+        audience = _pick([
+            "target_audience",
+            "who_should_read",
+            "谁该看这个",
+            "适合谁看"
+        ])
+        target_user = _pick(["target_user", "适用人群", "目标人群"])
+        power_user = _pick(["power_user", "谁能靠这套活得更好"])
+        survival_profile = _pick(["survival_profile", "生存画像"])
+        vulnerable_groups = _pick(["vulnerable_groups", "target_victim", "谁在被生吞活剥"])
+
+        core_value = core_thesis if core_thesis is not None else core
+        core = (str(core_value).strip() if core_value is not None else "")
+        practical = (str(practical).strip() if practical is not None else "")
+        audience = (str(audience).strip() if audience is not None else "")
+
+        sections = []
+        is_survival_algorithm = any([
+            scenario_algorithms,
+            critical_tactics,
+            decision_matrix,
+            cost_benefit_table,
+            tactical_actions,
+            profit_loss_sheet,
+            failure_modes,
+            anti_virus,
+            brain_patches,
+            survival_profile,
+            power_user,
+            vulnerable_groups
+        ])
+        if core:
+            core_title = (
+                "## 一句话总纲"
+                if core_thesis is not None
+                else "## 底层血实话"
+                if raw.get("survival_truth")
+                else "## 底层算法"
+                if is_survival_algorithm
+                else "## 核心生活哲学"
+            )
+            sections.append(core_title + "\n" + core)
+
+        if core_points:
+            if isinstance(core_points, list):
+                core_points_md = "\n".join([f"- {p}" for p in core_points if p])
+            else:
+                core_points_md = str(core_points).strip()
+            if core_points_md:
+                sections.append("## 核心观点\n" + core_points_md)
+
+        topic_items = []
+        if isinstance(topics, str):
+            topic_items = [topics]
+        elif isinstance(topics, list):
+            topic_items = [t for t in topics if t]
+        playbook_md = _format_playbook(daily_playbook)
+        if playbook_md:
+            sections.append("## 日常应用\n" + playbook_md)
+        else:
+            tactics_md = _format_critical_tactics(critical_tactics)
+            tactical_md = _format_critical_tactics(tactical_actions)
+            scenario_md = _format_scenarios(scenario_algorithms)
+            if tactics_md:
+                sections.append("## 核心实战策\n" + tactics_md)
+            elif tactical_md:
+                sections.append("## 场景反击动作\n" + tactical_md)
+            elif scenario_md:
+                sections.append("## 场景算法\n" + scenario_md)
+            elif topic_items:
+                topics_md = "\n".join([f"- {t}" for t in topic_items])
+                sections.append("## 主要话题\n" + topics_md)
+
+        if quick_checks:
+            if isinstance(quick_checks, list):
+                checks_md = "\n".join([f"- {c}" for c in quick_checks if c])
+            else:
+                checks_md = str(quick_checks).strip()
+            if checks_md:
+                sections.append("## 日常判断口诀\n" + checks_md)
+
+        decision_text = (str(decision_matrix).strip() if decision_matrix is not None else "")
+        cost_benefit = (str(cost_benefit_table).strip() if cost_benefit_table is not None else "")
+        profit_loss = (str(profit_loss_sheet).strip() if profit_loss_sheet is not None else "")
+        if decision_text:
+            sections.append("## 损益对赌表\n" + decision_text)
+        elif profit_loss:
+            sections.append("## 损益核算表\n" + profit_loss)
+        elif cost_benefit:
+            sections.append("## 损益决策表\n" + cost_benefit)
+        elif practical:
+            sections.append("## 实战指南\n" + practical)
+
+        anti_text = (str(anti_virus).strip() if anti_virus is not None else "")
+        brain_text = (str(brain_patches).strip() if brain_patches is not None else "")
+        failure_text = (str(failure_modes).strip() if failure_modes is not None else "")
+        if anti_text:
+            sections.append("## 生存补丁\n" + anti_text)
+        elif brain_text:
+            sections.append("## 强力降智补丁\n" + brain_text)
+        elif failure_text:
+            sections.append("## 失败模式分析\n" + failure_text)
+        elif traps:
+            if isinstance(traps, list):
+                traps_md = "\n".join([f"- {t}" for t in traps if t])
+            else:
+                traps_md = str(traps).strip()
+            if traps_md:
+                sections.append("## 思维陷阱\n" + traps_md)
+
+        power_text = (str(power_user).strip() if power_user is not None else "")
+        survival_text = (str(survival_profile).strip() if survival_profile is not None else "")
+        vulnerable_text = (str(vulnerable_groups).strip() if vulnerable_groups is not None else "")
+        target_text = (str(target_user).strip() if target_user is not None else "")
+        if power_text:
+            sections.append("## 谁能靠这套活得更好\n" + power_text)
+        elif target_text:
+            sections.append("## 适用人群\n" + target_text)
+        elif vulnerable_text:
+            sections.append("## 谁在被生吞活剥\n" + vulnerable_text)
+        elif survival_text:
+            sections.append("## 生存画像\n" + survival_text)
+        elif audience:
+            sections.append("## 适合谁看\n" + audience)
+
+        if not sections:
+            return ""
+
+        return "# 作者实战指南\n\n" + "\n\n".join(sections)
 
     async def generate_content_summary(self, content: ContentItem, segments: List[Segment], existing_summary: Summary = None):
         """
@@ -126,7 +394,7 @@ class AnalysisWorkflow:
                 continue
 
             raw = result.get("raw") if isinstance(result, dict) else None
-            report_markdown = raw.get("report_markdown", "") if isinstance(raw, dict) else ""
+            report_markdown = self._build_author_report_markdown(raw if isinstance(raw, dict) else None)
             report = AuthorReport(
                 author_id=author_id,
                 content_type=content_type,

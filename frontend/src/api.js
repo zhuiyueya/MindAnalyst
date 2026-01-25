@@ -61,5 +61,10 @@ export default {
   },
   chat(data) {
     return apiClient.post('/chat', data);
+  },
+
+  // LLM Logs
+  listLlmCalls(params = {}) {
+    return apiClient.get('/llm_calls', { params });
   }
 };

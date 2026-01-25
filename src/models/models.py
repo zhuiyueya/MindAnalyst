@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column
+from sqlalchemy import Column, Text
 from pydantic import field_serializer
 import uuid
 
@@ -84,6 +84,24 @@ class AuthorReport(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     author: Author = Relationship(back_populates="reports")
+
+class LLMCallLog(SQLModel, table=True):
+    id: str = Field(default_factory=generate_uuid, primary_key=True)
+    task_type: str = Field(index=True)
+    content_type: Optional[str] = Field(default=None, index=True)
+    profile_key: Optional[str] = Field(default=None, index=True)
+    model: Optional[str] = None
+    system_prompt: str = Field(default="", sa_column=Column(Text))
+    user_prompt: str = Field(default="", sa_column=Column(Text))
+    request_meta: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    response_text: Optional[str] = Field(default=None, sa_column=Column(Text))
+    response_meta: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    status: str = Field(default="success", index=True)
+    error_message: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 # Update Author to include reports relationship
 # We need to do this carefully since Author is defined above.
