@@ -625,7 +625,7 @@ async def run_reprocess_video_asr(content_id: str):
 
             await session.execute(delete(Segment).where(Segment.content_id == content_id))
             await session.commit()
-            await workflow.process_content(content)
+            await workflow.process_content(content, reuse_audio_only=True)
         except Exception as e:
             logger.error(f"Transcript reprocess failed: {e}")
         break
@@ -650,7 +650,7 @@ async def run_reprocess_author_asr(author_id: str):
 
                 await session.execute(delete(Segment).where(Segment.content_id == content.id))
                 await session.commit()
-                await workflow.process_content(content)
+                await workflow.process_content(content, reuse_audio_only=True)
         except Exception as e:
             logger.error(f"Transcript reprocess failed: {e}")
         break

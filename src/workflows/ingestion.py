@@ -321,21 +321,40 @@ class IngestionWorkflow:
         
         # NOTE: Author report generation is now manual.
 
-    async def process_content(self, content: ContentItem):
+    async def process_content(self, content: ContentItem, reuse_audio_only: bool = False):
         """Fetch subtitles, segment, and embed"""
         logger.info(f"Processing content: {content.title}")
         
         try:
-            v_info = await self.crawler.get_video_info(content.external_id)
-            cid = v_info["cid"]
-            
-            # 1. Try Get subtitles
-            subtitles = await self.crawler.get_subtitle(content.external_id, cid)
+            if reuse_audio_only:
+                v_info = {
+                    "duration": content.duration or 60,
+                    "desc": ""
+                }
+                subtitles = []
+            else:
+                v_info = await self.crawler.get_video_info(content.external_id)
+                cid = v_info["cid"]
+                
+                # 1. Try Get subtitles
+                subtitles = await self.crawler.get_subtitle(content.external_id, cid)
             
             # 2. Fallback: ASR
             if not subtitles:
                 logger.info(f"No subtitles for {content.external_id}, trying ASR...")
-                audio_path = await self.crawler.download_audio(content.external_id)
+                audio_path = None
+                reuse_object = self.storage.find_object_with_prefix(content.external_id)
+                if reuse_object:
+                    local_name = os.path.basename(reuse_object)
+                    local_path = os.path.join(self.crawler.download_dir, local_name)
+                    if self.storage.download_file(reuse_object, local_path):
+                        audio_path = local_path
+                        logger.info(f"Reusing stored audio for {content.external_id}: {reuse_object}")
+
+                if not audio_path and reuse_audio_only:
+                    logger.warning(f"No stored audio found for {content.external_id}; skipping ASR reuse-only run.")
+                elif not audio_path:
+                    audio_path = await self.crawler.download_audio(content.external_id)
                 if audio_path:
                     try:
                         # Upload to MinIO
@@ -343,31 +362,111 @@ class IngestionWorkflow:
                         # Note: We need await if upload is async, but MinIO client is sync. 
                         # We can run in executor if needed, but for MVP sync is fine or wrap it.
                         # Actually StorageService.upload_file is defined as async but calls sync minio.
-                        await self.storage.upload_file(audio_path, object_name)
+                        if not reuse_object:
+                            await self.storage.upload_file(audio_path, object_name)
                         
                         transcription = await self.asr.transcribe(audio_path)
                         # Process transcription result
                         # OpenAI 'verbose_json' returns 'segments' list if supported by SiliconFlow
                         # or just 'text'.
                         # Let's handle both.
-                        if hasattr(transcription, 'segments') and transcription.segments:
-                            # Convert to our subtitle format
-                            # segment has: id, seek, start, end, text, ...
-                            for seg in transcription.segments:
+                        transcription_data = transcription
+                        if hasattr(transcription, "model_dump"):
+                            try:
+                                transcription_data = transcription.model_dump()
+                            except Exception:
+                                transcription_data = transcription
+
+                        logger.info(
+                            "ASR raw response for %s: %s",
+                            content.external_id,
+                            transcription_data
+                        )
+
+                        payload = transcription_data
+                        if isinstance(payload, dict):
+                            for key in ("data", "result", "output", "response"):
+                                nested = payload.get(key)
+                                if isinstance(nested, dict):
+                                    payload = nested
+                                    break
+
+                        segments_data = None
+                        text_data = ""
+                        if isinstance(payload, dict):
+                            segments_data = (
+                                payload.get("segments")
+                                or payload.get("segment")
+                                or payload.get("utterances")
+                                or payload.get("utterance")
+                            )
+                            text_data = (
+                                payload.get("text")
+                                or payload.get("transcript")
+                                or payload.get("output_text")
+                                or payload.get("content")
+                                or ""
+                            )
+                        else:
+                            segments_data = getattr(payload, "segments", None)
+                            text_data = (
+                                getattr(payload, "text", "")
+                                or getattr(payload, "transcript", "")
+                                or ""
+                            )
+
+                        if isinstance(segments_data, dict):
+                            segments_data = segments_data.get("segments") or segments_data.get("items") or segments_data
+                        if isinstance(segments_data, str) and not text_data:
+                            text_data = segments_data
+                            segments_data = None
+
+                        if segments_data:
+                            for seg in segments_data:
+                                if isinstance(seg, dict):
+                                    start = seg.get("start", seg.get("from", 0))
+                                    end = seg.get("end", seg.get("to", 0))
+                                    text = (
+                                        seg.get("text")
+                                        or seg.get("content")
+                                        or seg.get("sentence")
+                                        or seg.get("utterance")
+                                        or ""
+                                    )
+                                else:
+                                    start = getattr(seg, "start", getattr(seg, "from", 0))
+                                    end = getattr(seg, "end", getattr(seg, "to", 0))
+                                    text = (
+                                        getattr(seg, "text", "")
+                                        or getattr(seg, "content", "")
+                                        or getattr(seg, "sentence", "")
+                                        or ""
+                                    )
+                                text = str(text).strip()
+                                if not text:
+                                    continue
                                 subtitles.append({
-                                    "from": seg.start,
-                                    "to": seg.end,
-                                    "content": seg.text
+                                    "from": float(start or 0),
+                                    "to": float(end or 0),
+                                    "content": text
                                 })
-                        elif transcription.text:
+                        elif text_data:
                             # Just text, chunk it roughly? 
                             # Or treat as one big chunk.
                             logger.info("ASR returned plain text without segments.")
                             subtitles = [{
                                 "from": 0,
                                 "to": v_info.get("duration", 60),
-                                "content": transcription.text
+                                "content": str(text_data).strip()
                             }]
+                        else:
+                            keys = list(payload.keys()) if isinstance(payload, dict) else None
+                            logger.warning(
+                                "ASR returned no segments/text for %s. type=%s keys=%s",
+                                content.external_id,
+                                type(payload),
+                                keys
+                            )
                             
                     except Exception as asr_e:
                         logger.error(f"ASR failed for {content.external_id}: {asr_e}")

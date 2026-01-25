@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import Optional
+from typing import Optional, List
 from minio import Minio
 from minio.error import S3Error
 from src.core.config import settings
@@ -54,3 +54,26 @@ class StorageService:
         except Exception as e:
             logger.error(f"Failed to get URL for {object_name}: {e}")
             return ""
+
+    def find_object_with_prefix(self, prefix: str) -> Optional[str]:
+        """
+        Find the first object whose name starts with prefix.
+        """
+        try:
+            objects = self.client.list_objects(self.bucket_name, prefix=prefix, recursive=True)
+            for obj in objects:
+                if obj.object_name.startswith(prefix):
+                    return obj.object_name
+        except Exception as e:
+            logger.error(f"Failed to list objects with prefix {prefix}: {e}")
+        return None
+
+    def download_file(self, object_name: str, target_path: str) -> bool:
+        """Download a file from MinIO to local path."""
+        try:
+            self.client.fget_object(self.bucket_name, object_name, target_path)
+            logger.info(f"Downloaded {object_name} to {target_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to download {object_name}: {e}")
+            return False
