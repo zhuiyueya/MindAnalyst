@@ -29,6 +29,9 @@ export default {
       params: { include_fallback: includeFallback }
     });
   },
+  resummarizePending(id) {
+    return apiClient.post(`/authors/${id}/resummarize_pending`);
+  },
   reprocessAuthorAsr(id) {
     return apiClient.post(`/authors/${id}/reprocess_asr`);
   },

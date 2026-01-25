@@ -376,6 +376,19 @@ async def resummarize_all_videos(
     background_tasks.add_task(run_resummarize_author, author_id, include_fallback)
     return {"status": "started", "message": "Batch summarization started"}
 
+@app.post("/api/v1/authors/{author_id}/resummarize_pending")
+async def resummarize_pending_videos(
+    author_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+
+    background_tasks.add_task(run_resummarize_author_pending, author_id)
+    return {"status": "started", "message": "Pending summarization started"}
+
 @app.post("/api/v1/videos/{video_id}/resummarize")
 async def resummarize_video(
     video_id: str, 
@@ -503,6 +516,40 @@ async def run_resummarize_author(author_id: str, include_fallback: bool = False)
                     
         except Exception as e:
             logger.error(f"Batch summarization failed: {e}")
+        break
+
+async def run_resummarize_author_pending(author_id: str):
+    async for session in get_session():
+        analysis = AnalysisWorkflow(session)
+        try:
+            stmt = select(ContentItem).where(ContentItem.author_id == author_id)
+            res = await session.execute(stmt)
+            contents = res.scalars().all()
+
+            logger.info(f"Re-summarizing pending videos for author {author_id}")
+
+            for content in contents:
+                if content.content_quality in {"summary", "missing"}:
+                    logger.info(f"Skipping {content.title} (fallback or missing content)")
+                    continue
+
+                stmt_sum = select(Summary.id).where(Summary.content_id == content.id).limit(1)
+                res_sum = await session.execute(stmt_sum)
+                has_summary = res_sum.scalar_one_or_none() is not None
+                if has_summary:
+                    logger.info(f"Skipping {content.title} (summary already exists)")
+                    continue
+
+                stmt_seg = select(Segment).where(Segment.content_id == content.id).order_by(Segment.segment_index)
+                res_seg = await session.execute(stmt_seg)
+                segments = res_seg.scalars().all()
+                if not segments:
+                    logger.info(f"Skipping {content.title} (no segments)")
+                    continue
+
+                await analysis.generate_content_summary(content, segments)
+        except Exception as e:
+            logger.error(f"Pending summarization failed: {e}")
         break
 
 async def run_reprocess_video_asr(content_id: str):

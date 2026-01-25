@@ -135,6 +135,19 @@ const triggerResummarizeAll = async (includeFallback = false) => {
   }
 }
 
+const triggerResummarizePending = async () => {
+  if (!confirm(t('author.confirmResummarizePending'))) return
+  processing.value = true
+  try {
+    await api.resummarizePending(authorId)
+    alert(t('common.batchTaskStarted'))
+  } catch (e) {
+    alert(t('common.failedPrefix') + e.message)
+  } finally {
+    processing.value = false
+  }
+}
+
 const triggerReprocessAsr = async () => {
   if (!confirm(t('author.confirmReprocessAsr'))) return
   processing.value = true
@@ -234,6 +247,13 @@ const triggerReprocessAsr = async () => {
               class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 text-sm"
             >
               {{ t('author.resummarizeAll') }}
+            </button>
+            <button 
+              @click="triggerResummarizePending"
+              :disabled="processing"
+              class="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50 text-sm"
+            >
+              {{ t('author.resummarizePending') }}
             </button>
             <button 
               @click="triggerResummarizeAll(true)"
