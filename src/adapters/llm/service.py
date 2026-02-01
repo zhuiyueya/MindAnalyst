@@ -1,6 +1,8 @@
 
 import logging
 import json
+import re
+import ast
 from typing import Dict, Any, List, Optional
 from openai import AsyncOpenAI
 from src.core.config import settings
@@ -19,7 +21,7 @@ class LLMService:
                 api_key=settings.OPENAI_API_KEY,
                 base_url=settings.OPENAI_BASE_URL
             )
-            self.model = "Qwen/Qwen2.5-7B-Instruct" # Default model
+            self.model = settings.OPENAI_MODEL or "deepseek-ai/DeepSeek-V3.2"
         else:
             logger.warning("OPENAI_API_KEY not set, LLM service will be disabled.")
         
@@ -52,6 +54,59 @@ class LLMService:
             "completion_tokens": getattr(usage, "completion_tokens", None),
             "total_tokens": getattr(usage, "total_tokens", None)
         }
+
+    def _response_to_debug(self, response: Any) -> str:
+        try:
+            if hasattr(response, "model_dump"):
+                return json.dumps(response.model_dump(), ensure_ascii=False)
+            if hasattr(response, "dict"):
+                return json.dumps(response.dict(), ensure_ascii=False)
+        except Exception as exc:
+            return f"<response dump failed: {exc}>"
+        return str(response)
+
+    def _parse_json_response(self, content: Optional[str]) -> Dict[str, Any]:
+        if not content:
+            return {"raw_text": "", "parse_error": "empty response"}
+
+        candidates: List[str] = []
+        stripped = content.strip()
+        candidates.append(stripped)
+
+        if stripped.startswith("```"):
+            unfenced = re.sub(r"^```[a-zA-Z0-9]*", "", stripped).strip()
+            unfenced = re.sub(r"```$", "", unfenced).strip()
+            candidates.append(unfenced)
+
+        obj_start = stripped.find("{")
+        obj_end = stripped.rfind("}")
+        if obj_start != -1 and obj_end != -1 and obj_end > obj_start:
+            candidates.append(stripped[obj_start:obj_end + 1])
+
+        arr_start = stripped.find("[")
+        arr_end = stripped.rfind("]")
+        if arr_start != -1 and arr_end != -1 and arr_end > arr_start:
+            candidates.append(stripped[arr_start:arr_end + 1])
+
+        last_error: Optional[Exception] = None
+        for candidate in candidates:
+            cleaned = re.sub(r",\s*([}\]])", r"\1", candidate)
+            try:
+                parsed = json.loads(cleaned)
+                return parsed if isinstance(parsed, dict) else {"raw": parsed}
+            except Exception as exc:
+                last_error = exc
+                try:
+                    parsed = ast.literal_eval(cleaned)
+                    if isinstance(parsed, dict):
+                        return parsed
+                    if isinstance(parsed, list):
+                        return {"raw": parsed}
+                except Exception as inner_exc:
+                    last_error = inner_exc
+                continue
+
+        return {"raw_text": content, "parse_error": str(last_error) if last_error else "invalid json"}
 
     async def _log_call(
         self,
@@ -178,6 +233,7 @@ class LLMService:
                 ],
                 response_format={"type": "json_object"}
             )
+            logger.info("LLM raw response (content.classify): %s", self._response_to_debug(response))
             content = response.choices[0].message.content
             data = json.loads(content)
             value = data.get("content_type") if isinstance(data, dict) else None
@@ -240,12 +296,27 @@ class LLMService:
                 messages=[
                     {"role": "system", "content": prompts["system"]},
                     {"role": "user", "content": prompts["user"]}
-                ],
-                response_format={"type": "json_object"}
+                ]
             )
+            logger.info("LLM raw response (summary.single): %s", self._response_to_debug(response))
             content = response.choices[0].message.content
-            raw = json.loads(content)
-            normalized = self._normalize_summary(raw, profile_key, resolved_type)
+            raw = self._parse_json_response(content)
+            if isinstance(raw, dict) and raw.get("parse_error"):
+                normalized = {
+                    "one_liner": "",
+                    "key_points": [],
+                    "summary": self._ensure_str(raw.get("raw_text")),
+                    "facts": [],
+                    "principles": [],
+                    "case_studies": [],
+                    "actionable_guidelines": [],
+                    "cognitive_warnings": [],
+                    "content_type": resolved_type,
+                    "profile": profile_key,
+                    "parse_error": raw.get("parse_error"),
+                }
+            else:
+                normalized = self._normalize_summary(raw, profile_key, resolved_type)
             await self._log_call(
                 task_type=task_type,
                 content_type=resolved_type,
@@ -255,7 +326,10 @@ class LLMService:
                 model=getattr(response, "model", self.model),
                 request_meta=request_meta,
                 response_text=content,
-                response_meta={"finish_reason": response.choices[0].finish_reason},
+                response_meta={
+                    "finish_reason": response.choices[0].finish_reason,
+                    **({"parse_error": raw.get("parse_error")} if isinstance(raw, dict) and raw.get("parse_error") else {})
+                },
                 usage=getattr(response, "usage", None)
             )
             return {"raw": raw, "normalized": normalized, "profile": profile_key, "content_type": resolved_type}
@@ -275,7 +349,12 @@ class LLMService:
             logger.error(f"Summary generation failed: {e}")
             return {"error": str(e)}
 
-    async def generate_author_report(self, summaries: List[Dict[str, Any]], content_type: Optional[str]) -> Dict[str, Any]:
+    async def generate_author_report(
+        self,
+        summaries: List[Dict[str, Any]],
+        content_type: Optional[str],
+        context_override: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Generate author-level report from multiple video summaries.
         """
@@ -288,13 +367,18 @@ class LLMService:
         if not self.client:
             return {"report": "LLM not configured", "profile": profile_key, "content_type": resolved_type}
             
-        # Aggregate summaries
+        # Aggregate summaries or use full-text override
+        context_source = "summaries"
         context_text = ""
-        for i, s in enumerate(summaries):
-            normalized = s.get("normalized") or s
-            one_liner = normalized.get("one_liner", "")
-            key_points = normalized.get("key_points", [])
-            context_text += f"视频{i+1}摘要: {one_liner}\n观点: {'; '.join(key_points)}\n\n"
+        if context_override and str(context_override).strip():
+            context_source = "full_text"
+            context_text = str(context_override)
+        else:
+            for i, s in enumerate(summaries):
+                normalized = s.get("normalized") or s
+                one_liner = normalized.get("one_liner", "")
+                key_points = normalized.get("key_points", [])
+                context_text += f"视频{i+1}摘要: {one_liner}\n观点: {'; '.join(key_points)}\n\n"
         content = None
         truncated_context = context_text[:30000]
         prompts = self.prompt_manager.get_prompt(profile_key, context=truncated_context)
@@ -302,7 +386,8 @@ class LLMService:
             "summary_count": len(summaries),
             "context_chars": len(context_text),
             "context_char_limit": 30000,
-            "context_truncated": len(context_text) > 30000
+            "context_truncated": len(context_text) > 30000,
+            "context_source": context_source
         }
         
         try:
@@ -314,8 +399,9 @@ class LLMService:
                 ],
                 response_format={"type": "json_object"}
             )
+            logger.info("LLM raw response (report.author): %s", self._response_to_debug(response))
             content = response.choices[0].message.content
-            raw = json.loads(content)
+            raw = self._parse_json_response(content)
             await self._log_call(
                 task_type="report.author",
                 content_type=resolved_type,
@@ -379,6 +465,7 @@ class LLMService:
                 messages=[{"role": "user", "content": prompts["user"]}],
                 response_format={"type": "json_object"}
             )
+            logger.info("LLM raw response (rag.rerank): %s", self._response_to_debug(response))
             content = response.choices[0].message.content
             result = json.loads(content)
             await self._log_call(
@@ -432,6 +519,7 @@ class LLMService:
                     {"role": "user", "content": prompts["user"]}
                 ]
             )
+            logger.info("LLM raw response (rag.answer): %s", self._response_to_debug(response))
             content = response.choices[0].message.content
             await self._log_call(
                 task_type="rag.answer",

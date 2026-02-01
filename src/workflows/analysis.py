@@ -1,4 +1,5 @@
 
+import json
 import logging
 from typing import List, Dict, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,14 +67,17 @@ class AnalysisWorkflow:
                 blocks = []
                 for item in value:
                     if isinstance(item, dict):
-                        scenario = (item.get("scenario") or "").strip()
+                        scenario = (item.get("scenario") or item.get("scene") or "").strip()
                         trigger = (item.get("trigger") or "").strip()
                         actions = item.get("action_sequence") or []
+                        hidden_rules = (item.get("hidden_rules") or "").strip()
                         lines = []
                         if scenario:
                             lines.append(f"### {scenario}")
                         if trigger:
                             lines.append(f"- 触发信号: {trigger}")
+                        if hidden_rules:
+                            lines.append(f"- 隐形规则: {hidden_rules}")
                         if actions:
                             if isinstance(actions, list):
                                 actions_md = "\n".join([f"  - {a}" for a in actions if a])
@@ -87,6 +91,88 @@ class AnalysisWorkflow:
                     else:
                         blocks.append(str(item))
                 return "\n\n".join([b for b in blocks if b])
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def _format_cognitive_foundation(value: Any) -> str:
+            if isinstance(value, dict):
+                axioms = value.get("axioms") or []
+                variables = value.get("fate_variables") or []
+                lines = []
+                if axioms:
+                    axioms_md = "\n".join([f"- {a}" for a in axioms if a])
+                    if axioms_md:
+                        lines.append("### 核心公理\n" + axioms_md)
+                if variables:
+                    vars_md = "\n".join([f"- {v}" for v in variables if v])
+                    if vars_md:
+                        lines.append("### 命运变量\n" + vars_md)
+                return "\n\n".join(lines).strip()
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def _format_paradigm_shifts(value: Any) -> str:
+            if isinstance(value, list):
+                blocks = []
+                for item in value:
+                    if isinstance(item, dict):
+                        concept = (item.get("concept") or "").strip()
+                        common_view = (item.get("common_view") or "").strip()
+                        author_view = (item.get("author_view") or "").strip()
+                        lines = []
+                        if concept:
+                            lines.append(f"### {concept}")
+                        if common_view:
+                            lines.append(f"- 常规认知: {common_view}")
+                        if author_view:
+                            lines.append(f"- 作者认知: {author_view}")
+                        block = "\n".join(lines).strip()
+                        if block:
+                            blocks.append(block)
+                    else:
+                        blocks.append(str(item))
+                return "\n\n".join([b for b in blocks if b])
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def _format_action_sop(value: Any) -> str:
+            if isinstance(value, list):
+                blocks = []
+                for item in value:
+                    if isinstance(item, dict):
+                        trigger = (item.get("trigger_situation") or "").strip()
+                        steps = item.get("execution_steps") or ""
+                        tools = (item.get("tools_or_scripts") or "").strip()
+                        lines = []
+                        if trigger:
+                            lines.append(f"### {trigger}")
+                        if steps:
+                            lines.append(f"- 执行步骤: {steps}")
+                        if tools:
+                            lines.append(f"- 工具/话术: {tools}")
+                        block = "\n".join(lines).strip()
+                        if block:
+                            blocks.append(block)
+                    else:
+                        blocks.append(str(item))
+                return "\n\n".join([b for b in blocks if b])
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        def _format_boundaries(value: Any) -> str:
+            if isinstance(value, dict):
+                sacrifice = (value.get("required_sacrifice") or "").strip()
+                unsuitable = (value.get("unsuitable_audience") or "").strip()
+                lines = []
+                if sacrifice:
+                    lines.append(f"- 必须付出的代价: {sacrifice}")
+                if unsuitable:
+                    lines.append(f"- 不适合人群: {unsuitable}")
+                return "\n".join(lines).strip()
             if value is None:
                 return ""
             return str(value).strip()
@@ -124,7 +210,7 @@ class AnalysisWorkflow:
                 blocks = []
                 for item in value:
                     if isinstance(item, dict):
-                        scenario = (item.get("scenario") or "").strip()
+                        scenario = (item.get("scenario") or item.get("scene") or "").strip()
                         fake_hope = (
                             item.get("fake_hope")
                             or item.get("fool_think")
@@ -150,6 +236,7 @@ class AnalysisWorkflow:
             return str(value).strip()
 
         core_thesis = _pick(["core_thesis", "一句话总纲", "总纲", "核心论点"])
+        cognitive_foundation = _pick(["cognitive_foundation", "认知基石"])
         core = _pick([
             "core_philosophy",
             "core_survival_logic",
@@ -173,6 +260,9 @@ class AnalysisWorkflow:
         critical_tactics = _pick(["critical_tactics", "核心实战策"])
         decision_matrix = _pick(["decision_matrix", "损益对赌表", "损益决策表"])
         scenario_algorithms = _pick(["scenario_algorithms", "场景算法"])
+        paradigm_shifts = _pick(["paradigm_shifts", "认知反转点"])
+        human_nature_scenarios = _pick(["human_nature_scenarios", "人性场景"])
+        action_sop = _pick(["action_sop", "实践SOP", "实战SOP"])
         cost_benefit_table = _pick(["cost_benefit_table", "损益决策表"])
         tactical_actions = _pick(["tactical_actions", "场景反击动作"])
         profit_loss_sheet = _pick(["profit_loss_sheet", "p_l_table", "损益核算表"])
@@ -186,6 +276,7 @@ class AnalysisWorkflow:
         failure_modes = _pick(["failure_modes", "失败模式分析"])
         brain_patches = _pick(["brain_patches", "logic_patches", "强力降智补丁"])
         quick_checks = _pick(["quick_checks", "日常判断口诀", "判断口诀"])
+        boundaries_and_costs = _pick(["boundaries_and_costs", "边界与代价"])
         audience = _pick([
             "target_audience",
             "who_should_read",
@@ -237,6 +328,22 @@ class AnalysisWorkflow:
             if core_points_md:
                 sections.append("## 核心观点\n" + core_points_md)
 
+        cognitive_md = _format_cognitive_foundation(cognitive_foundation)
+        if cognitive_md:
+            sections.append("## 认知基石\n" + cognitive_md)
+
+        paradigm_md = _format_paradigm_shifts(paradigm_shifts)
+        if paradigm_md:
+            sections.append("## 认知反转点\n" + paradigm_md)
+
+        human_md = _format_scenarios(human_nature_scenarios)
+        if human_md:
+            sections.append("## 人性场景\n" + human_md)
+
+        action_md = _format_action_sop(action_sop)
+        if action_md:
+            sections.append("## 实战 SOP\n" + action_md)
+
         topic_items = []
         if isinstance(topics, str):
             topic_items = [topics]
@@ -266,6 +373,10 @@ class AnalysisWorkflow:
                 checks_md = str(quick_checks).strip()
             if checks_md:
                 sections.append("## 日常判断口诀\n" + checks_md)
+
+        boundaries_md = _format_boundaries(boundaries_and_costs)
+        if boundaries_md:
+            sections.append("## 边界与代价\n" + boundaries_md)
 
         decision_text = (str(decision_matrix).strip() if decision_matrix is not None else "")
         cost_benefit = (str(cost_benefit_table).strip() if cost_benefit_table is not None else "")
@@ -375,6 +486,18 @@ class AnalysisWorkflow:
             logger.warning("No summaries found for author report.")
             return
 
+        content_ids = [summary.content_id for summary, _ in rows if summary.content_id]
+        segments_by_content: Dict[str, List[Segment]] = {}
+        if content_ids:
+            stmt_segments = (
+                select(Segment)
+                .where(Segment.content_id.in_(content_ids))
+                .order_by(Segment.content_id, Segment.segment_index)
+            )
+            res_segments = await self.session.execute(stmt_segments)
+            for seg in res_segments.scalars().all():
+                segments_by_content.setdefault(seg.content_id, []).append(seg)
+
         grouped: Dict[str, List[Summary]] = {}
         for summary, content_type in rows:
             key = content_type or "generic"
@@ -384,23 +507,42 @@ class AnalysisWorkflow:
             grouped = {author.author_type: [summary for summary, _ in rows]}
 
         for content_type, summaries in grouped.items():
+            full_context_parts: List[str] = []
+            for idx, summary in enumerate(summaries, start=1):
+                segs = segments_by_content.get(summary.content_id) or []
+                if not segs:
+                    continue
+                text = "\n".join([s.text for s in segs if s.text]).strip()
+                if text:
+                    full_context_parts.append(f"视频{idx}全文:\n{text}")
+            context_override = "\n\n".join(full_context_parts) if full_context_parts else None
+
             summary_data = [s.json_data for s in summaries if s.json_data]
             if not summary_data:
                 continue
 
-            result = await self.llm.generate_author_report(summary_data, content_type)
+            result = await self.llm.generate_author_report(
+                summary_data,
+                content_type,
+                context_override=context_override
+            )
             if "error" in result:
                 logger.warning(f"Report generation failed: {result['error']}")
                 continue
 
             raw = result.get("raw") if isinstance(result, dict) else None
-            report_markdown = self._build_author_report_markdown(raw if isinstance(raw, dict) else None)
+            if isinstance(raw, dict):
+                report_content = json.dumps(raw, ensure_ascii=False, indent=2)
+            elif raw is not None:
+                report_content = json.dumps(raw, ensure_ascii=False)
+            else:
+                report_content = ""
             report = AuthorReport(
                 author_id=author_id,
                 content_type=content_type,
                 report_type="report.author",
                 report_version=self._extract_report_version(result.get("profile") if isinstance(result, dict) else None),
-                content=report_markdown,
+                content=report_content,
                 json_data=result if isinstance(result, dict) else {"raw": raw}
             )
             self.session.add(report)

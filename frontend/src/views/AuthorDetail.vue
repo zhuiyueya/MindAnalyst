@@ -48,6 +48,52 @@ const fetchData = async () => {
   }
 }
 
+const escapeHtml = (value) => {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const isPlainObject = (value) => Object.prototype.toString.call(value) === '[object Object]'
+
+const renderJsonValue = (value) => {
+  if (value === null || value === undefined) {
+    return '<span class="text-gray-400">-</span>'
+  }
+  if (typeof value === 'string') {
+    return `<div class="prose max-w-none">${md.render(value)}</div>`
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return `<span class="text-gray-800">${escapeHtml(value)}</span>`
+  }
+  if (Array.isArray(value)) {
+    if (!value.length) return '<span class="text-gray-400">[]</span>'
+    return `<div class="space-y-2">${value
+      .map((item) => `<div class="rounded border border-gray-200 bg-white p-2">${renderJsonValue(item)}</div>`)
+      .join('')}</div>`
+  }
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value)
+    if (!entries.length) return '<span class="text-gray-400">{}</span>'
+    return `<div class="space-y-3">${entries
+      .map(
+        ([key, val]) => `
+          <div class="rounded border border-gray-200 bg-white p-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">${escapeHtml(key)}</div>
+            ${renderJsonValue(val)}
+          </div>
+        `
+      )
+      .join('')}</div>`
+  }
+  return `<span class="text-gray-800">${escapeHtml(value)}</span>`
+}
+
+const renderJsonBlock = (value) => `<div class="space-y-4">${renderJsonValue(value)}</div>`
+
 const statusText = (status) => t(`status.values.${status || 'pending'}`)
 const qualityText = (quality) => t(`status.values.${quality || 'summary'}`)
 
@@ -81,7 +127,13 @@ const statusClass = (status) => {
 
 const renderReport = computed(() => {
   if (!activeReport.value || !activeReport.value.content) return t('author.noReport')
-  return md.render(activeReport.value.content)
+  const content = activeReport.value.content
+  try {
+    const parsed = JSON.parse(content)
+    return renderJsonBlock(parsed)
+  } catch (e) {
+    return md.render(content)
+  }
 })
 
 const formatDate = (value) => {
