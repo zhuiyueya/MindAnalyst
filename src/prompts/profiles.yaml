@@ -5,9 +5,9 @@ profiles:
 
   overrides:
     insight:
-      summary.single: { key: "types/insight/summary_single/v2" }
+      summary.single: { key: "types/insight/summary_single/v5" }
       summary.short:  { key: "types/insight/summary_short/v1" }
-      report.author:  { key: "types/insight/author_report/v10" }
+      report.author:  { key: "types/insight/author_report/v11" }
       rag.answer:     { key: "types/insight/rag/answer_v1" }
       rag.rerank:     { key: "types/insight/rag/rerank_v1" }
     howto:
