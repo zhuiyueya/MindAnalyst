@@ -65,6 +65,37 @@ class LLMService:
             return f"<response dump failed: {exc}>"
         return str(response)
 
+    def _parse_summary_blocks(self, text: str) -> List[Dict[str, str]]:
+        if not text:
+            return []
+        pattern = re.compile(r"\[(观点|案例|实操|金句)\]")
+        matches = list(pattern.finditer(text))
+        if not matches:
+            cleaned = text.strip()
+            return [{"type": "其他", "text": cleaned}] if cleaned else []
+
+        blocks: List[Dict[str, str]] = []
+        last_type: Optional[str] = None
+        last_index = 0
+        for match in matches:
+            if last_type is not None:
+                chunk = text[last_index:match.start()].strip()
+                if chunk:
+                    blocks.append({"type": last_type, "text": chunk})
+            else:
+                leading = text[:match.start()].strip()
+                if leading:
+                    blocks.append({"type": "其他", "text": leading})
+            last_type = match.group(1)
+            last_index = match.end()
+
+        if last_type is not None:
+            tail = text[last_index:].strip()
+            if tail:
+                blocks.append({"type": last_type, "text": tail})
+
+        return blocks
+
     def _parse_json_response(self, content: Optional[str]) -> Dict[str, Any]:
         if not content:
             return {"raw_text": "", "parse_error": "empty response"}
@@ -277,9 +308,13 @@ class LLMService:
             profile_key = "types/generic/summary_single/v1"
 
         if not self.client:
-            raw = {"summary": "LLM not configured", "key_points": []}
-            normalized = self._normalize_summary(raw, profile_key, resolved_type)
-            return {"raw": raw, "normalized": normalized, "profile": profile_key, "content_type": resolved_type}
+            raw_text = "LLM not configured"
+            return {
+                "raw_text": raw_text,
+                "blocks": [],
+                "profile": profile_key,
+                "content_type": resolved_type
+            }
         content = None
         truncated_text = text[:30000]
         prompts = self.prompt_manager.get_prompt(profile_key, text=truncated_text)
@@ -299,24 +334,9 @@ class LLMService:
                 ]
             )
             logger.info("LLM raw response (summary.single): %s", self._response_to_debug(response))
-            content = response.choices[0].message.content
-            raw = self._parse_json_response(content)
-            if isinstance(raw, dict) and raw.get("parse_error"):
-                normalized = {
-                    "one_liner": "",
-                    "key_points": [],
-                    "summary": self._ensure_str(raw.get("raw_text")),
-                    "facts": [],
-                    "principles": [],
-                    "case_studies": [],
-                    "actionable_guidelines": [],
-                    "cognitive_warnings": [],
-                    "content_type": resolved_type,
-                    "profile": profile_key,
-                    "parse_error": raw.get("parse_error"),
-                }
-            else:
-                normalized = self._normalize_summary(raw, profile_key, resolved_type)
+            content = response.choices[0].message.content or ""
+            raw_text = content.strip()
+            blocks = self._parse_summary_blocks(raw_text)
             await self._log_call(
                 task_type=task_type,
                 content_type=resolved_type,
@@ -328,11 +348,16 @@ class LLMService:
                 response_text=content,
                 response_meta={
                     "finish_reason": response.choices[0].finish_reason,
-                    **({"parse_error": raw.get("parse_error")} if isinstance(raw, dict) and raw.get("parse_error") else {})
+                    "block_count": len(blocks)
                 },
                 usage=getattr(response, "usage", None)
             )
-            return {"raw": raw, "normalized": normalized, "profile": profile_key, "content_type": resolved_type}
+            return {
+                "raw_text": raw_text,
+                "blocks": blocks,
+                "profile": profile_key,
+                "content_type": resolved_type
+            }
         except Exception as e:
             await self._log_call(
                 task_type=task_type,

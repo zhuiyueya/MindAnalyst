@@ -446,13 +446,13 @@ class AnalysisWorkflow:
             logger.warning(f"Summary generation failed for {content.title}: {result['error']}")
             return
 
-        normalized = result.get("normalized") if isinstance(result, dict) else None
-        if not normalized:
-            normalized = result
+        raw_text = ""
+        if isinstance(result, dict):
+            raw_text = str(result.get("raw_text") or "")
 
         if existing_summary:
             logger.info(f"Updating existing summary for {content.title}")
-            existing_summary.content = normalized.get("summary", "")
+            existing_summary.content = raw_text
             existing_summary.json_data = result
             self.session.add(existing_summary)
         else:
@@ -460,7 +460,7 @@ class AnalysisWorkflow:
             summary = Summary(
                 content_id=content.id,
                 summary_type="structured",
-                content=normalized.get("summary", ""),
+                content=raw_text,
                 json_data=result
             )
             self.session.add(summary)

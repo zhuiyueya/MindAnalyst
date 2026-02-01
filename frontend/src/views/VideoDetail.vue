@@ -2,11 +2,15 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import MarkdownIt from 'markdown-it'
 import api from '../api'
 
 const route = useRoute()
 const videoId = route.params.id
 const { t, locale } = useI18n()
+const md = new MarkdownIt()
+
+const renderMarkdown = (value) => md.render(String(value || ''))
 
 const video = ref(null)
 const summary = ref(null)
@@ -16,9 +20,10 @@ const loading = ref(true)
 const processing = ref(false)
 const selectedContentType = ref('')
 
-const summaryNormalized = computed(() => {
-  if (!summary.value || !summary.value.json_data) return null
-  return summary.value.json_data.normalized || summary.value.json_data
+const summaryBlocks = computed(() => {
+  if (!summary.value || !summary.value.json_data) return []
+  const blocks = summary.value.json_data.blocks
+  return Array.isArray(blocks) ? blocks : []
 })
 
 const fetchData = async () => {
@@ -212,54 +217,13 @@ const formatTime = (ms) => {
       <div class="bg-white shadow rounded-lg p-6 h-fit">
         <h3 class="text-lg font-medium text-gray-900 mb-4 border-b pb-2">{{ t('video.summaryTitle') }}</h3>
         <div v-if="summary" class="prose max-w-none text-sm">
-            <div v-if="summaryNormalized && summaryNormalized.one_liner" class="mb-4 bg-blue-50 p-3 rounded">
-                <strong>{{ t('video.oneLiner') }}:</strong> {{ summaryNormalized.one_liner }}
-            </div>
-            
-            <div v-if="summaryNormalized && summaryNormalized.key_points">
-                <strong>{{ t('video.keyPoints') }}:</strong>
-                <ul class="list-disc pl-5 space-y-1 mt-2">
-                    <li v-for="(point, idx) in summaryNormalized.key_points" :key="idx">{{ point }}</li>
-                </ul>
-            </div>
-
-            <div v-if="summaryNormalized && summaryNormalized.principles && summaryNormalized.principles.length" class="mt-4">
-                <strong>{{ t('video.corePrinciples') }}:</strong>
-                <ul class="list-disc pl-5 space-y-1 mt-2">
-                    <li v-for="(item, idx) in summaryNormalized.principles" :key="`p-${idx}`">{{ item }}</li>
-                </ul>
-            </div>
-
-            <div v-if="summaryNormalized && summaryNormalized.actionable_guidelines && summaryNormalized.actionable_guidelines.length" class="mt-4">
-                <strong>{{ t('video.actionableGuidelines') }}:</strong>
-                <ul class="list-disc pl-5 space-y-1 mt-2">
-                    <li v-for="(item, idx) in summaryNormalized.actionable_guidelines" :key="`a-${idx}`">{{ item }}</li>
-                </ul>
-            </div>
-
-            <div v-if="summaryNormalized && summaryNormalized.cognitive_warnings && summaryNormalized.cognitive_warnings.length" class="mt-4">
-                <strong>{{ t('video.cognitiveWarnings') }}:</strong>
-                <ul class="list-disc pl-5 space-y-1 mt-2">
-                    <li v-for="(item, idx) in summaryNormalized.cognitive_warnings" :key="`w-${idx}`">{{ item }}</li>
-                </ul>
-            </div>
-
-            <div v-if="summaryNormalized && summaryNormalized.case_studies && summaryNormalized.case_studies.length" class="mt-4">
-                <strong>{{ t('video.caseStudies') }}:</strong>
-                <div class="mt-2 space-y-3">
-                    <div v-for="(item, idx) in summaryNormalized.case_studies" :key="`c-${idx}`" class="rounded border border-gray-200 p-3">
-                        <div v-if="item.description" class="text-gray-800">{{ item.description }}</div>
-                        <div v-else class="space-y-1 text-gray-700">
-                            <div v-if="item.背景"><strong>背景：</strong>{{ item.背景 }}</div>
-                            <div v-if="item['问题根源（感性/理性）']"><strong>问题根源：</strong>{{ item['问题根源（感性/理性）'] }}</div>
-                            <div v-if="item.导致的后果"><strong>导致的后果：</strong>{{ item.导致的后果 }}</div>
-                            <div v-if="item.正确的做法"><strong>正确的做法：</strong>{{ item.正确的做法 }}</div>
-                        </div>
-                    </div>
+            <div v-if="summaryBlocks.length" class="space-y-3">
+                <div v-for="(block, idx) in summaryBlocks" :key="idx" class="rounded border border-gray-200 p-3">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{{ block.type }}</div>
+                    <div class="prose max-w-none" v-html="renderMarkdown(block.text)"></div>
                 </div>
             </div>
-            
-            <div v-if="summary.content && !summary.json_data" class="whitespace-pre-wrap">
+            <div v-else-if="summary.content" class="whitespace-pre-wrap">
                 {{ summary.content }}
             </div>
         </div>
