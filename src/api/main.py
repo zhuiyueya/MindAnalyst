@@ -452,6 +452,32 @@ async def resummarize_pending_videos(
     background_tasks.add_task(run_resummarize_author_pending, author_id)
     return {"status": "started", "message": "Pending summarization started"}
 
+@app.post("/api/v1/authors/{author_id}/compress_short_summaries")
+async def compress_short_summaries(
+    author_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+
+    background_tasks.add_task(run_generate_short_summaries, author_id)
+    return {"status": "started", "message": "Short summary compression started"}
+
+@app.post("/api/v1/authors/{author_id}/generate_categories")
+async def generate_author_categories(
+    author_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+
+    background_tasks.add_task(run_generate_author_categories, author_id)
+    return {"status": "started", "message": "Category analysis started"}
+
 @app.post("/api/v1/videos/{video_id}/resummarize")
 async def resummarize_video(
     video_id: str, 
@@ -613,6 +639,24 @@ async def run_resummarize_author_pending(author_id: str):
                 await analysis.generate_content_summary(content, segments)
         except Exception as e:
             logger.error(f"Pending summarization failed: {e}")
+        break
+
+async def run_generate_short_summaries(author_id: str):
+    async for session in get_session():
+        analysis = AnalysisWorkflow(session)
+        try:
+            await analysis.generate_short_summaries_for_author(author_id)
+        except Exception as e:
+            logger.error(f"Short summary compression failed: {e}")
+        break
+
+async def run_generate_author_categories(author_id: str):
+    async for session in get_session():
+        analysis = AnalysisWorkflow(session)
+        try:
+            await analysis.generate_author_categories_and_tag(author_id)
+        except Exception as e:
+            logger.error(f"Category generation failed: {e}")
         break
 
 async def run_reprocess_video_asr(content_id: str):

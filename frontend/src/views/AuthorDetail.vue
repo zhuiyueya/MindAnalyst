@@ -107,6 +107,7 @@ const activeReport = computed(() => {
 })
 
 const reportTypes = computed(() => Object.keys(reportsByType.value || {}))
+const authorCategories = computed(() => author.value?.category_list || [])
 
 const statusClass = (status) => {
   switch (status) {
@@ -200,6 +201,32 @@ const triggerResummarizePending = async () => {
   }
 }
 
+const triggerCompressShortSummaries = async () => {
+  if (!confirm(t('author.confirmCompressShortSummaries'))) return
+  processing.value = true
+  try {
+    await api.compressShortSummaries(authorId)
+    alert(t('common.batchTaskStarted'))
+  } catch (e) {
+    alert(t('common.failedPrefix') + e.message)
+  } finally {
+    processing.value = false
+  }
+}
+
+const triggerGenerateCategories = async () => {
+  if (!confirm(t('author.confirmGenerateCategories'))) return
+  processing.value = true
+  try {
+    await api.generateCategories(authorId)
+    alert(t('common.batchTaskStarted'))
+  } catch (e) {
+    alert(t('common.failedPrefix') + e.message)
+  } finally {
+    processing.value = false
+  }
+}
+
 const triggerReprocessAsr = async () => {
   if (!confirm(t('author.confirmReprocessAsr'))) return
   processing.value = true
@@ -270,6 +297,16 @@ const triggerReprocessAsr = async () => {
               {{ t('author.status.qualityMissing') }}: {{ authorStatus.content_quality_counts.missing }}
             </span>
           </div>
+          <div v-if="authorCategories.length" class="mt-3 flex flex-wrap gap-2 text-xs">
+            <span class="text-gray-500">{{ t('author.categoryList') }}:</span>
+            <span
+              v-for="category in authorCategories"
+              :key="category"
+              class="px-2 py-1 rounded bg-blue-100 text-blue-700"
+            >
+              {{ category }}
+            </span>
+          </div>
           <div class="mt-4 flex flex-wrap items-center gap-3">
             <div class="flex items-center space-x-2">
               <label class="text-sm text-gray-600">{{ t('author.authorTypeLabel') }}</label>
@@ -306,6 +343,20 @@ const triggerReprocessAsr = async () => {
               class="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50 text-sm"
             >
               {{ t('author.resummarizePending') }}
+            </button>
+            <button 
+              @click="triggerCompressShortSummaries"
+              :disabled="processing"
+              class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-50 text-sm"
+            >
+              {{ t('author.compressShortSummaries') }}
+            </button>
+            <button 
+              @click="triggerGenerateCategories"
+              :disabled="processing"
+              class="px-4 py-2 bg-violet-600 text-white rounded hover:bg-violet-700 disabled:opacity-50 text-sm"
+            >
+              {{ t('author.generateCategories') }}
             </button>
             <button 
               @click="triggerResummarizeAll(true)"

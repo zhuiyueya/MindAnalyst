@@ -32,6 +32,12 @@ export default {
   resummarizePending(id) {
     return apiClient.post(`/authors/${id}/resummarize_pending`);
   },
+  compressShortSummaries(id) {
+    return apiClient.post(`/authors/${id}/compress_short_summaries`);
+  },
+  generateCategories(id) {
+    return apiClient.post(`/authors/${id}/generate_categories`);
+  },
   reprocessAuthorAsr(id) {
     return apiClient.post(`/authors/${id}/reprocess_asr`);
   },

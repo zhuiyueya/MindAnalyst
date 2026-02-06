@@ -3,6 +3,7 @@ import logging
 import json
 import re
 import ast
+import os
 from typing import Dict, Any, List, Optional
 from openai import AsyncOpenAI
 from src.core.config import settings
@@ -10,23 +11,17 @@ from src.prompts.manager import PromptManager
 from src.prompts.registry import PromptRegistry
 from src.database.db import get_session
 from src.models.models import LLMCallLog
+from src.models.provider_registry import ModelProviderRegistry
 
 logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
-        self.client = None
-        if settings.OPENAI_API_KEY:
-            self.client = AsyncOpenAI(
-                api_key=settings.OPENAI_API_KEY,
-                base_url=settings.OPENAI_BASE_URL
-            )
-            self.model = settings.OPENAI_MODEL or "deepseek-ai/DeepSeek-V3.2"
-        else:
-            logger.warning("OPENAI_API_KEY not set, LLM service will be disabled.")
-        
+        self._clients: Dict[str, AsyncOpenAI] = {}
+        self.default_model_name = settings.OPENAI_MODEL or "deepseek-ai/DeepSeek-V3.2"
         self.prompt_manager = PromptManager()
         self.prompt_registry = PromptRegistry()
+        self.model_registry = ModelProviderRegistry()
 
     def _ensure_list(self, value) -> List[Any]:
         if value is None:
@@ -138,6 +133,46 @@ class LLMService:
                 continue
 
         return {"raw_text": content, "parse_error": str(last_error) if last_error else "invalid json"}
+
+    def _get_client_for_scene(
+        self,
+        scene: str
+    ) -> tuple[Optional[AsyncOpenAI], str, Optional[str], Optional[str]]:
+        model_id = self.model_registry.get_scene_model_id(scene)
+        model_config = self.model_registry.get_model_config(model_id)
+        provider_name: Optional[str] = None
+        model_name = self.default_model_name
+        base_url: Optional[str] = settings.OPENAI_BASE_URL
+        api_key: Optional[str] = settings.OPENAI_API_KEY
+        api_key_env: Optional[str] = None
+
+        if model_config:
+            provider_name = model_config.get("provider")
+            model_name = model_config.get("model_name") or model_name
+            provider_config = self.model_registry.get_provider_config(provider_name) or {}
+            base_url = provider_config.get("base_url") or base_url
+            api_key_env = provider_config.get("api_key_env")
+            if api_key_env:
+                api_key = os.getenv(api_key_env)
+            if not api_key:
+                api_key = settings.OPENAI_API_KEY
+
+        if not api_key:
+            logger.warning("LLM API key missing for scene=%s", scene)
+            return None, model_name, model_id, provider_name
+
+        cache_key = f"{provider_name or 'default'}::{base_url or ''}::{api_key_env or 'default'}"
+        if cache_key not in self._clients:
+            self._clients[cache_key] = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        return self._clients[cache_key], model_name, model_id, provider_name
+
+    def _build_request_meta(self, base: Dict[str, Any], model_id: Optional[str], provider: Optional[str]) -> Dict[str, Any]:
+        meta = dict(base)
+        if model_id:
+            meta["model_id"] = model_id
+        if provider:
+            meta["provider"] = provider
+        return meta
 
     async def _log_call(
         self,
@@ -252,12 +287,13 @@ class LLMService:
             "input_char_limit": 20000,
             "input_truncated": len(text) > 20000
         }
-        if not self.client:
+        client, model_name, model_id, provider = self._get_client_for_scene("content.classify")
+        if not client:
             return None
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = await client.chat.completions.create(
+                model=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
                     {"role": "user", "content": prompts["user"]}
@@ -274,8 +310,8 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt=prompts["system"],
                 user_prompt=prompts["user"],
-                model=getattr(response, "model", self.model),
-                request_meta=request_meta,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
                 usage=getattr(response, "usage", None)
@@ -288,14 +324,88 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt=prompts["system"],
                 user_prompt=prompts["user"],
-                model=self.model,
-                request_meta=request_meta,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
                 error_message=str(e)
             )
             logger.error(f"Content classify failed: {e}")
             return None
+
+    async def generate_short_summary(self, text: str, content_type: Optional[str]) -> Dict[str, Any]:
+        resolved_type = content_type or "generic"
+        profile_key = self.prompt_registry.get_prompt_key("summary.short", resolved_type, require_override=True)
+        if not profile_key:
+            logger.warning("No profile for task=summary.short type=%s, falling back to generic", resolved_type)
+            profile_key = "types/generic/summary_short/v1"
+
+        client, model_name, model_id, provider = self._get_client_for_scene("summary.short")
+        if not client:
+            return {
+                "raw": {
+                    "keywords": [],
+                    "summary": "LLM not configured",
+                    "is_trash": False
+                },
+                "profile": profile_key,
+                "content_type": resolved_type
+            }
+
+        content = None
+        truncated_text = text[:30000]
+        prompts = self.prompt_manager.get_prompt(profile_key, full_transcript=truncated_text)
+        request_meta = {
+            "input_chars": len(text),
+            "input_char_limit": 30000,
+            "input_truncated": len(text) > 30000,
+            "task_type": "summary.short"
+        }
+
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": prompts["system"]},
+                    {"role": "user", "content": prompts["user"]}
+                ],
+                response_format={"type": "json_object"}
+            )
+            logger.info("LLM raw response (summary.short): %s", self._response_to_debug(response))
+            content = response.choices[0].message.content or ""
+            raw = self._parse_json_response(content)
+            await self._log_call(
+                task_type="summary.short",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
+            return {
+                "raw": raw,
+                "profile": profile_key,
+                "content_type": resolved_type
+            }
+        except Exception as e:
+            await self._log_call(
+                task_type="summary.short",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                status="error",
+                error_message=str(e)
+            )
+            logger.error("Short summary generation failed: %s", e)
+            return {"error": str(e)}
 
     async def generate_summary(self, text: str, content_type: Optional[str], task_type: str = "summary.single") -> Dict[str, Any]:
         """
@@ -307,7 +417,9 @@ class LLMService:
             logger.warning(f"No profile for task={task_type} type={resolved_type}, falling back to generic")
             profile_key = "types/generic/summary_single/v1"
 
-        if not self.client:
+        scene = task_type
+        client, model_name, model_id, provider = self._get_client_for_scene(scene)
+        if not client:
             raw_text = "LLM not configured"
             return {
                 "raw_text": raw_text,
@@ -326,8 +438,8 @@ class LLMService:
         }
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = await client.chat.completions.create(
+                model=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
                     {"role": "user", "content": prompts["user"]}
@@ -343,8 +455,8 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt=prompts["system"],
                 user_prompt=prompts["user"],
-                model=getattr(response, "model", self.model),
-                request_meta=request_meta,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={
                     "finish_reason": response.choices[0].finish_reason,
@@ -365,8 +477,8 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt=prompts["system"],
                 user_prompt=prompts["user"],
-                model=self.model,
-                request_meta=request_meta,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
                 error_message=str(e)
@@ -389,7 +501,8 @@ class LLMService:
             logger.warning(f"No report profile for type={resolved_type}, using generic")
             profile_key = "types/generic/author_report/v1"
 
-        if not self.client:
+        client, model_name, model_id, provider = self._get_client_for_scene("report.author")
+        if not client:
             return {"report": "LLM not configured", "profile": profile_key, "content_type": resolved_type}
             
         # Aggregate summaries or use full-text override
@@ -416,8 +529,8 @@ class LLMService:
         }
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = await client.chat.completions.create(
+                model=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
                     {"role": "user", "content": prompts["user"]}
@@ -433,8 +546,8 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt=prompts["system"],
                 user_prompt=prompts["user"],
-                model=getattr(response, "model", self.model),
-                request_meta=request_meta,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
                 usage=getattr(response, "usage", None)
@@ -447,8 +560,8 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt=prompts["system"],
                 user_prompt=prompts["user"],
-                model=self.model,
-                request_meta=request_meta,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
                 error_message=str(e)
@@ -466,7 +579,8 @@ class LLMService:
             logger.warning(f"No rerank profile for type={resolved_type}, using generic")
             profile_key = "types/generic/rag/rerank_v1"
 
-        if not self.client:
+        client, model_name, model_id, provider = self._get_client_for_scene("rag.rerank")
+        if not client:
             return list(range(min(len(documents), top_n)))
 
         prompts = self.prompt_manager.get_prompt(
@@ -485,8 +599,8 @@ class LLMService:
         }
         
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = await client.chat.completions.create(
+                model=model_name,
                 messages=[{"role": "user", "content": prompts["user"]}],
                 response_format={"type": "json_object"}
             )
@@ -499,8 +613,8 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt="",
                 user_prompt=prompts["user"],
-                model=getattr(response, "model", self.model),
-                request_meta=request_meta,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
                 usage=getattr(response, "usage", None)
@@ -514,8 +628,8 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt="",
                 user_prompt=prompts["user"],
-                model=self.model,
-                request_meta=request_meta,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 status="error",
                 error_message=str(e)
             )
@@ -530,15 +644,16 @@ class LLMService:
             profile_key = "types/generic/rag/answer_v1"
 
         prompts = self.prompt_manager.get_prompt(profile_key, query=query, context_str=context_str)
-        if not self.client:
+        client, model_name, model_id, provider = self._get_client_for_scene("rag.answer")
+        if not client:
             return "【模拟回答】基于片段 [1]，作者提到了相关概念。\n(请配置 OPENAI_API_KEY 以启用真实 LLM 回答)"
         request_meta = {
             "query_chars": len(query),
             "context_chars": len(context_str)
         }
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = await client.chat.completions.create(
+                model=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
                     {"role": "user", "content": prompts["user"]}
@@ -552,8 +667,8 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt=prompts["system"],
                 user_prompt=prompts["user"],
-                model=getattr(response, "model", self.model),
-                request_meta=request_meta,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
                 usage=getattr(response, "usage", None)
@@ -566,10 +681,223 @@ class LLMService:
                 profile_key=profile_key,
                 system_prompt=prompts["system"],
                 user_prompt=prompts["user"],
-                model=self.model,
-                request_meta=request_meta,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
                 status="error",
                 error_message=str(e)
             )
             logger.error(f"RAG answer failed: {e}")
             return f"Error calling LLM: {e}"
+
+    async def select_batch_candidates(self, items: List[Dict[str, Any]], top_min: int = 5, top_max: int = 8) -> Dict[str, Any]:
+        client, model_name, model_id, provider = self._get_client_for_scene("batch.select_candidates")
+        if not client:
+            return {"selected_ids": []}
+
+        prompt = (
+            "你是内容分析助手，请从给定内容中挑选最有深度的条目。\n"
+            "输入是一组 {video_id, summary, keywords}。\n"
+            f"输出 JSON：{{\"selected_ids\": [\"id1\", ...]}}，数量介于 {top_min}-{top_max}。"
+        )
+        payload = json.dumps(items, ensure_ascii=False)
+        request_meta = {
+            "item_count": len(items),
+            "top_min": top_min,
+            "top_max": top_max
+        }
+        content = None
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": payload}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            data = self._parse_json_response(content)
+            await self._log_call(
+                task_type="batch.select_candidates",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=payload,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
+            return data
+        except Exception as e:
+            await self._log_call(
+                task_type="batch.select_candidates",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=payload,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                status="error",
+                error_message=str(e)
+            )
+            logger.error("Batch candidate selection failed: %s", e)
+            return {"error": str(e)}
+
+    async def select_final_candidates(self, items: List[Dict[str, Any]], top_n: int = 20) -> Dict[str, Any]:
+        client, model_name, model_id, provider = self._get_client_for_scene("batch.final_select")
+        if not client:
+            return {"selected_ids": [], "category_list": []}
+
+        prompt = (
+            "你是内容策展助手，请根据摘要挑选最具代表性的内容。\n"
+            f"输出 JSON：{{\"selected_ids\": [\"id1\", ...], \"category_list\": [\"分类1\", ...]}}，selected_ids 数量为 {top_n}。"
+        )
+        payload = json.dumps(items, ensure_ascii=False)
+        request_meta = {"item_count": len(items), "top_n": top_n}
+        content = None
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": payload}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            data = self._parse_json_response(content)
+            await self._log_call(
+                task_type="batch.final_select",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=payload,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
+            return data
+        except Exception as e:
+            await self._log_call(
+                task_type="batch.final_select",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=payload,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                status="error",
+                error_message=str(e)
+            )
+            logger.error("Final candidate selection failed: %s", e)
+            return {"error": str(e)}
+
+    async def generate_author_categories(self, category_list: List[str], summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        client, model_name, model_id, provider = self._get_client_for_scene("author.final_categories")
+        if not client:
+            return {"category_list": category_list}
+
+        prompt = (
+            "你是内容分类助手，请根据候选分类与代表摘要生成最终分类。\n"
+            "输出 JSON：{\"category_list\": [\"分类1\", ...]}。"
+        )
+        payload = json.dumps({"category_list": category_list, "summaries": summaries}, ensure_ascii=False)
+        request_meta = {"candidate_category_count": len(category_list), "summary_count": len(summaries)}
+        content = None
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": payload}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            data = self._parse_json_response(content)
+            await self._log_call(
+                task_type="author.final_categories",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=payload,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
+            return data
+        except Exception as e:
+            await self._log_call(
+                task_type="author.final_categories",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=payload,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                status="error",
+                error_message=str(e)
+            )
+            logger.error("Author category generation failed: %s", e)
+            return {"error": str(e)}
+
+    async def tag_video_category(self, category_list: List[str], summary: Dict[str, Any]) -> Dict[str, Any]:
+        client, model_name, model_id, provider = self._get_client_for_scene("video.category_tagging")
+        if not client:
+            return {"category": None}
+
+        prompt = (
+            "你是内容标签助手，根据分类列表为单条内容选择最匹配的分类。\n"
+            "输出 JSON：{\"category\": \"分类名称\"}。"
+        )
+        payload = json.dumps({"category_list": category_list, "summary": summary}, ensure_ascii=False)
+        request_meta = {"category_count": len(category_list)}
+        content = None
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": payload}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            data = self._parse_json_response(content)
+            await self._log_call(
+                task_type="video.category_tagging",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=payload,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None)
+            )
+            return data
+        except Exception as e:
+            await self._log_call(
+                task_type="video.category_tagging",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=payload,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                status="error",
+                error_message=str(e)
+            )
+            logger.error("Video category tagging failed: %s", e)
+            return {"error": str(e)}

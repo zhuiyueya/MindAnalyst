@@ -1,0 +1,36 @@
+providers:
+  siliconflow:
+    base_url: "https://api.siliconflow.cn/v1"
+    api_key_env: "SILICONFLOW_API_KEY"
+  deepseek:
+    base_url: "https://api.deepseek.com/v1"
+    api_key_env: "DEEPSEEK_API_KEY"
+  openai:
+    base_url: "https://api.openai.com/v1"
+    api_key_env: "OPENAI_API_KEY"
+
+models:
+  - id: "siliconflow-qwen2.5-7b-instruct"
+    provider: "siliconflow"
+    model_name: "Qwen/Qwen2.5-7B-Instruct"
+    price: 0
+  - id: "deepseek-v3"
+    provider: "deepseek"
+    model_name: "deepseek-chat"
+    price: 0
+  - id: "siliconflow-deepseek-v3.2"
+    provider: "siliconflow"
+    model_name: "deepseek-ai/DeepSeek-V3.2"
+    price: 0
+
+scenes:
+  content.classify: "siliconflow-deepseek-v3.2"
+  summary.single: "siliconflow-deepseek-v3.2"
+  summary.short: "siliconflow-qwen2.5-7b-instruct"
+  report.author: "siliconflow-deepseek-v3.2"
+  rag.answer: "siliconflow-deepseek-v3.2"
+  rag.rerank: "siliconflow-deepseek-v3.2"
+  batch.select_candidates: "siliconflow-deepseek-v3.2"
+  batch.final_select: "siliconflow-deepseek-v3.2"
+  author.final_categories: "siliconflow-deepseek-v3.2"
+  video.category_tagging: "siliconflow-qwen2.5-7b-instruct"

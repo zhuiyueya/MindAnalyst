@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     HF_ENDPOINT: Optional[str] = None
     EMBEDDING_MODEL_NAME: str = "paraphrase-multilingual-MiniLM-L12-v2" # or text-embedding-3-small
     SUMMARY_PROMPT_PROFILE: str = "video_summary/v1"
+    MODEL_CONFIG_PATH: str = "src/models/provider_models.yaml"
+    CATEGORY_BATCH_SIZE: int = 500
     
     class Config:
         env_file = ".env"

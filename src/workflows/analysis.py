@@ -7,6 +7,7 @@ from sqlmodel import select
 from src.models.models import ContentItem, Segment, Summary, AuthorReport, Author
 from src.adapters.llm.service import LLMService
 from src.database.db import get_session
+from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -549,3 +550,156 @@ class AnalysisWorkflow:
 
         await self.session.commit()
         logger.info(f"Saved author reports for {author_id}")
+
+    async def generate_short_summaries_for_author(self, author_id: str) -> Dict[str, Any]:
+        logger.info("Generating short summaries for author %s", author_id)
+        stmt = (
+            select(Summary, ContentItem)
+            .join(ContentItem, Summary.content_id == ContentItem.id)
+            .where(ContentItem.author_id == author_id)
+            .where(Summary.summary_type == "structured")
+            .order_by(Summary.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        latest_by_content: Dict[str, tuple[Summary, ContentItem]] = {}
+        for summary, content in rows:
+            if summary.content_id and summary.content_id not in latest_by_content:
+                latest_by_content[summary.content_id] = (summary, content)
+
+        total = 0
+        updated = 0
+        skipped = 0
+        for summary, content in latest_by_content.values():
+            total += 1
+            if not summary.content:
+                skipped += 1
+                continue
+            try:
+                result = await self.llm.generate_short_summary(summary.content, content.content_type)
+                if not isinstance(result, dict) or "error" in result:
+                    skipped += 1
+                    continue
+                raw = result.get("raw") if isinstance(result, dict) else None
+                if raw is None:
+                    raw = result
+                if not isinstance(raw, dict):
+                    raw = {"raw": raw}
+                summary.short_json = raw
+                self.session.add(summary)
+                await self.session.commit()
+                updated += 1
+            except Exception as exc:
+                logger.error("Short summary failed for content %s: %s", summary.content_id, exc)
+                skipped += 1
+
+        return {"total": total, "updated": updated, "skipped": skipped}
+
+    async def generate_author_categories_and_tag(self, author_id: str) -> Dict[str, Any]:
+        logger.info("Generating categories and tagging videos for author %s", author_id)
+        stmt = (
+            select(Summary, ContentItem)
+            .join(ContentItem, Summary.content_id == ContentItem.id)
+            .where(ContentItem.author_id == author_id)
+            .where(Summary.summary_type == "structured")
+            .order_by(Summary.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        latest_by_content: Dict[str, tuple[Summary, ContentItem]] = {}
+        for summary, content in rows:
+            if summary.content_id and summary.content_id not in latest_by_content:
+                latest_by_content[summary.content_id] = (summary, content)
+
+        items: List[Dict[str, Any]] = []
+        for summary, content in latest_by_content.values():
+            payload = summary.short_json or {}
+            if payload.get("is_trash") is True:
+                continue
+            summary_text = payload.get("summary") or ""
+            keywords = payload.get("keywords") or []
+            if not summary_text:
+                continue
+            items.append({
+                "video_id": content.id,
+                "summary": summary_text,
+                "keywords": keywords
+            })
+
+        if not items:
+            return {"error": "no_valid_short_summary"}
+
+        batch_size = max(1, settings.CATEGORY_BATCH_SIZE)
+        candidate_ids: List[str] = []
+        for i in range(0, len(items), batch_size):
+            batch = items[i:i + batch_size]
+            batch_result = await self.llm.select_batch_candidates(batch)
+            selected = batch_result.get("selected_ids") if isinstance(batch_result, dict) else None
+            if isinstance(selected, list):
+                candidate_ids.extend([str(x) for x in selected])
+
+        candidate_ids_set = set(candidate_ids)
+        candidate_items = [item for item in items if item["video_id"] in candidate_ids_set]
+        if not candidate_items:
+            candidate_items = items
+
+        final_result = await self.llm.select_final_candidates(candidate_items)
+        final_ids = final_result.get("selected_ids") if isinstance(final_result, dict) else None
+        category_list = final_result.get("category_list") if isinstance(final_result, dict) else None
+        if not isinstance(final_ids, list):
+            final_ids = [item["video_id"] for item in candidate_items][:20]
+        if not isinstance(category_list, list):
+            category_list = []
+
+        final_ids_set = set(str(x) for x in final_ids)
+        final_items = [item for item in candidate_items if item["video_id"] in final_ids_set]
+        if not final_items:
+            final_items = candidate_items[:20]
+
+        final_long_items: List[Dict[str, Any]] = []
+        for item in final_items:
+            summary_obj, _ = latest_by_content.get(item["video_id"], (None, None))
+            if not summary_obj:
+                continue
+            final_long_items.append({
+                "video_id": item["video_id"],
+                "summary_content": summary_obj.content
+            })
+
+        author_category_result = await self.llm.generate_author_categories(category_list, final_long_items)
+        final_categories = author_category_result.get("category_list") if isinstance(author_category_result, dict) else None
+        if isinstance(final_categories, list) and final_categories:
+            category_list = final_categories
+
+        author = await self.session.get(Author, author_id)
+        if author:
+            author.category_list = category_list
+            self.session.add(author)
+            await self.session.commit()
+
+        if not category_list:
+            return {"error": "category_list_empty", "candidate_count": len(candidate_items)}
+
+        tagged = 0
+        for summary, content in latest_by_content.values():
+            payload = summary.short_json or {}
+            if payload.get("is_trash") is True:
+                continue
+            if not summary.content:
+                continue
+            tag_result = await self.llm.tag_video_category(category_list, {"summary_content": summary.content})
+            category = tag_result.get("category") if isinstance(tag_result, dict) else None
+            if category:
+                summary.video_category = str(category)
+                self.session.add(summary)
+                await self.session.commit()
+                tagged += 1
+
+        return {
+            "candidate_count": len(candidate_items),
+            "final_count": len(final_items),
+            "tagged": tagged,
+            "category_list": category_list
+        }

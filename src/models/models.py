@@ -18,6 +18,7 @@ class Author(SQLModel, table=True):
     avatar_url: Optional[str] = None
     author_type: Optional[str] = Field(default=None, index=True)
     author_type_source: Optional[str] = None
+    category_list: List[str] = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     contents: List["ContentItem"] = Relationship(back_populates="author")
@@ -69,6 +70,8 @@ class Summary(SQLModel, table=True):
     summary_type: str # content, short
     content: str # The summary text
     json_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON)) # Structured summary
+    short_json: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    video_category: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     content_item: ContentItem = Relationship(back_populates="summaries")

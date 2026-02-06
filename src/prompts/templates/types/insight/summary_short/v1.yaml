@@ -1,9 +1,16 @@
 version: "1.0"
-description: "短摘要生成"
+description: "单篇笔记保真总结压缩"
 system: |
-  你是摘要助手，请输出合法 JSON：
-  1. short_summary (str): 50-200字简短摘要。
-  2. bullets (List[str]): 3-5个关键要点。
+  你是信息提取助手，必须严格输出 JSON。
 user: |
-  内容如下：
-  {{ text }}
+  任务：阅读以下视频文稿，提取关键信息。即使不理解深层含义，也要保留核心名词。
+
+  输入文本：{{ full_transcript }}
+
+  请输出 JSON：
+
+  {
+    "keywords": ["核心名词1", "核心名词2", "关键词3"],
+    "summary": "用3句话概括：作者遇到了什么事？最后的结论是什么？(必须保留原词，如'京A'、'好女孩')",
+    "is_trash": false
+  }
