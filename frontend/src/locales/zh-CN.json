@@ -95,6 +95,9 @@
   "video": {
     "originalMedia": "原始音频/视频",
     "audioNotSupported": "你的浏览器不支持音频播放。",
+    "videoCategory": "视频分类",
+    "shortSummary": "短摘要",
+    "shortKeywords": "关键词",
     "summaryTitle": "摘要",
     "oneLiner": "一句话总结",
     "keyPoints": "关键要点",

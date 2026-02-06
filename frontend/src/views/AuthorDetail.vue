@@ -109,6 +109,28 @@ const activeReport = computed(() => {
 const reportTypes = computed(() => Object.keys(reportsByType.value || {}))
 const authorCategories = computed(() => author.value?.category_list || [])
 
+const videoCategoryLabel = (value) => {
+  if (!value) return ''
+  return String(value)
+}
+
+const videoShortSummary = (video) => {
+  const payload = video?.short_json
+  if (!payload) return ''
+  if (typeof payload === 'string') return payload
+  if (typeof payload === 'object') {
+    return String(payload.summary || '')
+  }
+  return ''
+}
+
+const videoShortKeywords = (video) => {
+  const payload = video?.short_json
+  if (!payload || typeof payload !== 'object') return []
+  const keywords = payload.keywords
+  return Array.isArray(keywords) ? keywords.map((x) => String(x)) : []
+}
+
 const statusClass = (status) => {
   switch (status) {
     case 'ready':
@@ -446,6 +468,26 @@ const triggerReprocessAsr = async () => {
                   class="px-2 py-1 rounded"
                 >
                   {{ t('status.labels.quality') }}: {{ qualityText(video.content_quality) }}
+                </span>
+                <span
+                  v-if="video.video_category"
+                  class="px-2 py-1 rounded bg-purple-100 text-purple-700"
+                >
+                  {{ t('video.videoCategory') }}: {{ videoCategoryLabel(video.video_category) }}
+                </span>
+              </div>
+              <div v-if="videoShortSummary(video)" class="mt-2">
+                <div class="text-xs text-gray-500 mb-1">{{ t('video.shortSummary') }}</div>
+                <div class="text-sm text-gray-800 whitespace-pre-wrap">{{ videoShortSummary(video) }}</div>
+              </div>
+              <div v-if="videoShortKeywords(video).length" class="mt-2 flex flex-wrap gap-2 text-xs">
+                <span class="text-gray-500">{{ t('video.shortKeywords') }}:</span>
+                <span
+                  v-for="kw in videoShortKeywords(video)"
+                  :key="kw"
+                  class="px-2 py-1 rounded bg-sky-100 text-sky-700"
+                >
+                  {{ kw }}
                 </span>
               </div>
             </div>

@@ -95,6 +95,9 @@
   "video": {
     "originalMedia": "Original Audio/Video",
     "audioNotSupported": "Your browser does not support the audio element.",
+    "videoCategory": "Video Category",
+    "shortSummary": "Short Summary",
+    "shortKeywords": "Keywords",
     "summaryTitle": "Summary",
     "oneLiner": "One Liner",
     "keyPoints": "Key Points",

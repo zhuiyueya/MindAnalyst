@@ -26,6 +26,42 @@ const summaryBlocks = computed(() => {
   return Array.isArray(blocks) ? blocks : []
 })
 
+const videoShortSummary = computed(() => {
+  const payload = summary.value?.short_json
+  if (!payload) return ''
+  if (typeof payload === 'string') return payload
+  if (typeof payload === 'object') {
+    return String(payload.summary || '')
+  }
+  return ''
+})
+
+const videoShortKeywords = computed(() => {
+  const payload = summary.value?.short_json
+  if (!payload || typeof payload !== 'object') return []
+  const keywords = payload.keywords
+  return Array.isArray(keywords) ? keywords.map((x) => String(x)) : []
+})
+
+const bracketBlocks = computed(() => {
+  const content = summary.value?.content
+  if (!content || typeof content !== 'string') return []
+
+  const re = /\[([^\]]+?)\]/g
+  const matches = Array.from(content.matchAll(re))
+  if (!matches.length) return []
+
+  const blocks = []
+  for (let i = 0; i < matches.length; i += 1) {
+    const tag = matches[i][1]
+    const start = matches[i].index + matches[i][0].length
+    const end = i + 1 < matches.length ? matches[i + 1].index : content.length
+    const text = content.slice(start, end).trim()
+    blocks.push({ tag, text })
+  }
+  return blocks
+})
+
 const fetchData = async () => {
   try {
     const res = await api.getVideo(videoId)
@@ -163,6 +199,26 @@ const formatTime = (ms) => {
         >
           {{ t('status.labels.quality') }}: {{ qualityText(video.content_quality) }}
         </span>
+        <span
+          v-if="summary && summary.video_category"
+          class="px-2 py-1 rounded bg-purple-100 text-purple-700"
+        >
+          {{ t('video.videoCategory') }}: {{ summary.video_category }}
+        </span>
+      </div>
+      <div v-if="videoShortSummary" class="mt-3">
+        <div class="text-xs text-gray-500 mb-1">{{ t('video.shortSummary') }}</div>
+        <div class="text-sm text-gray-800 whitespace-pre-wrap">{{ videoShortSummary }}</div>
+      </div>
+      <div v-if="videoShortKeywords.length" class="mt-2 flex flex-wrap gap-2 text-xs">
+        <span class="text-gray-500">{{ t('video.shortKeywords') }}:</span>
+        <span
+          v-for="kw in videoShortKeywords"
+          :key="kw"
+          class="px-2 py-1 rounded bg-sky-100 text-sky-700"
+        >
+          {{ kw }}
+        </span>
       </div>
       <div class="mt-4 flex flex-wrap items-center gap-3">
         <div class="flex items-center space-x-2">
@@ -220,6 +276,12 @@ const formatTime = (ms) => {
             <div v-if="summaryBlocks.length" class="space-y-3">
                 <div v-for="(block, idx) in summaryBlocks" :key="idx" class="rounded border border-gray-200 p-3">
                     <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{{ block.type }}</div>
+                    <div class="prose max-w-none" v-html="renderMarkdown(block.text)"></div>
+                </div>
+            </div>
+            <div v-else-if="bracketBlocks.length" class="space-y-3">
+                <div v-for="(block, idx) in bracketBlocks" :key="idx" class="rounded border border-gray-200 p-3">
+                    <div class="text-xs font-semibold tracking-wide text-gray-500 mb-2">[{{ block.tag }}]</div>
                     <div class="prose max-w-none" v-html="renderMarkdown(block.text)"></div>
                 </div>
             </div>

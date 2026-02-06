@@ -201,12 +201,24 @@ async def get_author_videos(author_id: str, session: AsyncSession = Depends(get_
     stmt = select(ContentItem).where(ContentItem.author_id == author_id).order_by(ContentItem.published_at.desc())
     result = await session.execute(stmt)
     videos = result.scalars().all()
+    video_ids = [v.id for v in videos]
+
+    latest_summary_by_content: dict[str, Summary] = {}
+    if video_ids:
+        stmt_latest = (
+            select(Summary)
+            .where(Summary.content_id.in_(video_ids))
+            .order_by(Summary.content_id, Summary.created_at.desc())
+        )
+        res_latest = await session.execute(stmt_latest)
+        for s in res_latest.scalars().all():
+            if s.content_id and s.content_id not in latest_summary_by_content:
+                latest_summary_by_content[s.content_id] = s
     
     video_list = []
     for v in videos:
-        stmt_sum = select(Summary.id).where(Summary.content_id == v.id).limit(1)
-        res_sum = await session.execute(stmt_sum)
-        has_summary = res_sum.scalar_one_or_none() is not None
+        summary_obj = latest_summary_by_content.get(v.id)
+        has_summary = summary_obj is not None
 
         stmt_seg = select(Segment.id).where(Segment.content_id == v.id).limit(1)
         res_seg = await session.execute(stmt_seg)
@@ -214,6 +226,9 @@ async def get_author_videos(author_id: str, session: AsyncSession = Depends(get_
 
         v_dict = v.model_dump()
         v_dict["has_summary"] = has_summary
+        if summary_obj is not None:
+            v_dict["video_category"] = summary_obj.video_category
+            v_dict["short_json"] = summary_obj.short_json
         v_dict.update(_compute_status_fields(v.content_quality, has_segments, has_summary))
         video_list.append(v_dict)
         
