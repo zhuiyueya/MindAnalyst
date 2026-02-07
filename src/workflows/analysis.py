@@ -551,6 +551,94 @@ class AnalysisWorkflow:
         await self.session.commit()
         logger.info(f"Saved author reports for {author_id}")
 
+    async def generate_category_reports_for_author(self, author_id: str) -> Dict[str, Any]:
+        logger.info("Generating category reports for author %s", author_id)
+        author = await self.session.get(Author, author_id)
+        if not author:
+            return {"error": "author_not_found"}
+
+        content_type = author.author_type or "generic"
+        categories = [str(x) for x in (author.category_list or []) if str(x).strip()]
+        if not categories:
+            return {"error": "category_list_empty"}
+
+        stmt = (
+            select(Summary, ContentItem)
+            .join(ContentItem, Summary.content_id == ContentItem.id)
+            .where(ContentItem.author_id == author_id)
+            .where(Summary.summary_type == "structured")
+            .order_by(Summary.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        if not rows:
+            return {"error": "no_summaries"}
+
+        latest_by_content: Dict[str, tuple[Summary, ContentItem]] = {}
+        for summary, content in rows:
+            if summary.content_id and summary.content_id not in latest_by_content:
+                latest_by_content[summary.content_id] = (summary, content)
+
+        summaries_by_category: Dict[str, List[tuple[Summary, ContentItem]]] = {c: [] for c in categories}
+        for summary, content in latest_by_content.values():
+            cat = (summary.video_category or "").strip() if summary.video_category else ""
+            if not cat:
+                continue
+            if cat not in summaries_by_category:
+                continue
+            if not summary.content:
+                continue
+            summaries_by_category[cat].append((summary, content))
+
+        generated = 0
+        skipped = 0
+        for category in categories:
+            items = summaries_by_category.get(category) or []
+            if not items:
+                skipped += 1
+                continue
+
+            context_parts: List[str] = []
+            for idx, (summary, content) in enumerate(items, start=1):
+                title = (content.title or "").strip()
+                header = f"视频{idx}: {title}" if title else f"视频{idx}"
+                context_parts.append(f"{header}\n{summary.content}")
+            context_override = "\n\n".join([x for x in context_parts if x]).strip()
+            if not context_override:
+                skipped += 1
+                continue
+
+            result = await self.llm.generate_author_report([], content_type, context_override=context_override)
+            if not isinstance(result, dict) or "error" in result:
+                skipped += 1
+                continue
+
+            raw = result.get("raw") if isinstance(result, dict) else None
+            if isinstance(raw, dict):
+                report_content = json.dumps(raw, ensure_ascii=False, indent=2)
+            elif raw is not None:
+                report_content = json.dumps(raw, ensure_ascii=False)
+            else:
+                report_content = ""
+
+            report = AuthorReport(
+                author_id=author_id,
+                content_type=content_type,
+                report_type="report.author.category",
+                report_version=self._extract_report_version(result.get("profile") if isinstance(result, dict) else None),
+                content=report_content,
+                json_data={
+                    "category": category,
+                    "video_count": len(items),
+                    "llm_result": result,
+                },
+            )
+            self.session.add(report)
+            await self.session.commit()
+            generated += 1
+
+        return {"generated": generated, "skipped": skipped, "categories": categories}
+
     async def generate_short_summaries_for_author(self, author_id: str) -> Dict[str, Any]:
         logger.info("Generating short summaries for author %s", author_id)
         stmt = (

@@ -159,6 +159,19 @@ async def get_author(author_id: str, session: AsyncSession = Depends(get_session
         reports_by_type.setdefault(key, []).append(report)
     latest_report = reports_data[0] if reports_data else None
 
+    category_reports_by_type: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for report in reports_data:
+        if report.get("report_type") != "report.author.category":
+            continue
+        key = report.get("content_type") or "generic"
+        category = None
+        json_data = report.get("json_data")
+        if isinstance(json_data, dict):
+            category = json_data.get("category")
+        if not category:
+            continue
+        category_reports_by_type.setdefault(key, {})[str(category)] = report
+
     stmt_contents = select(ContentItem).where(ContentItem.author_id == author_id)
     res_contents = await session.execute(stmt_contents)
     contents = res_contents.scalars().all()
@@ -193,8 +206,23 @@ async def get_author(author_id: str, session: AsyncSession = Depends(get_session
         "latest_report": latest_report,
         "reports": reports_data,
         "reports_by_type": reports_by_type,
+        "category_reports_by_type": category_reports_by_type,
         "author_status": author_status
     }
+
+
+@app.post("/api/v1/authors/{author_id}/generate_category_reports")
+async def generate_category_reports(
+    author_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session)
+):
+    author = await session.get(Author, author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="Author not found")
+
+    background_tasks.add_task(run_generate_category_reports, author_id)
+    return {"status": "started", "message": "Category reports generation started"}
 
 @app.get("/api/v1/authors/{author_id}/videos")
 async def get_author_videos(author_id: str, session: AsyncSession = Depends(get_session)):
@@ -672,6 +700,15 @@ async def run_generate_author_categories(author_id: str):
             await analysis.generate_author_categories_and_tag(author_id)
         except Exception as e:
             logger.error(f"Category generation failed: {e}")
+        break
+
+async def run_generate_category_reports(author_id: str):
+    async for session in get_session():
+        analysis = AnalysisWorkflow(session)
+        try:
+            await analysis.generate_category_reports_for_author(author_id)
+        except Exception as e:
+            logger.error(f"Category report generation failed: {e}")
         break
 
 async def run_reprocess_video_asr(content_id: str):

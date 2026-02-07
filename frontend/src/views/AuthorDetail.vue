@@ -12,7 +12,9 @@ const { t, locale } = useI18n()
 const author = ref(null)
 const report = ref(null)
 const reportsByType = ref({})
+const categoryReportsByType = ref({})
 const selectedReportType = ref('')
+const selectedCategory = ref('')
 const selectedAuthorType = ref('')
 const videos = ref([])
 const authorStatus = ref(null)
@@ -32,6 +34,7 @@ const fetchData = async () => {
     author.value = authRes.data.author
     report.value = authRes.data.latest_report
     reportsByType.value = authRes.data.reports_by_type || {}
+    categoryReportsByType.value = authRes.data.category_reports_by_type || {}
     selectedAuthorType.value = author.value?.author_type || ''
     if (selectedAuthorType.value && reportsByType.value[selectedAuthorType.value]) {
       selectedReportType.value = selectedAuthorType.value
@@ -41,6 +44,10 @@ const fetchData = async () => {
     }
     videos.value = vidRes.data
     authorStatus.value = authRes.data.author_status || null
+
+    const categoriesForType = categoryReportsByType.value?.[selectedReportType.value] || {}
+    const keys = Object.keys(categoriesForType)
+    selectedCategory.value = keys.length ? keys[0] : ''
   } catch (e) {
     console.error(e)
   } finally {
@@ -109,6 +116,19 @@ const activeReport = computed(() => {
 const reportTypes = computed(() => Object.keys(reportsByType.value || {}))
 const authorCategories = computed(() => author.value?.category_list || [])
 
+const categoryReportKeys = computed(() => {
+  const type = selectedReportType.value || ''
+  const group = categoryReportsByType.value?.[type] || {}
+  return Object.keys(group)
+})
+
+const activeCategoryReport = computed(() => {
+  const type = selectedReportType.value || ''
+  const group = categoryReportsByType.value?.[type] || {}
+  if (!selectedCategory.value) return null
+  return group[selectedCategory.value] || null
+})
+
 const videoCategoryLabel = (value) => {
   if (!value) return ''
   return String(value)
@@ -149,8 +169,9 @@ const statusClass = (status) => {
 }
 
 const renderReport = computed(() => {
-  if (!activeReport.value || !activeReport.value.content) return t('author.noReport')
-  const content = activeReport.value.content
+  const reportObj = activeCategoryReport.value || activeReport.value
+  if (!reportObj || !reportObj.content) return t('author.noReport')
+  const content = reportObj.content
   try {
     const parsed = JSON.parse(content)
     return renderJsonBlock(parsed)
@@ -241,6 +262,19 @@ const triggerGenerateCategories = async () => {
   processing.value = true
   try {
     await api.generateCategories(authorId)
+    alert(t('common.batchTaskStarted'))
+  } catch (e) {
+    alert(t('common.failedPrefix') + e.message)
+  } finally {
+    processing.value = false
+  }
+}
+
+const triggerGenerateCategoryReports = async () => {
+  if (!confirm(t('author.confirmGenerateCategoryReports'))) return
+  processing.value = true
+  try {
+    await api.generateCategoryReports(authorId)
     alert(t('common.batchTaskStarted'))
   } catch (e) {
     alert(t('common.failedPrefix') + e.message)
@@ -381,6 +415,13 @@ const triggerReprocessAsr = async () => {
               {{ t('author.generateCategories') }}
             </button>
             <button 
+              @click="triggerGenerateCategoryReports"
+              :disabled="processing"
+              class="px-4 py-2 bg-fuchsia-600 text-white rounded hover:bg-fuchsia-700 disabled:opacity-50 text-sm"
+            >
+              {{ t('author.generateCategoryReports') }}
+            </button>
+            <button 
               @click="triggerResummarizeAll(true)"
               :disabled="processing"
               class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
@@ -428,6 +469,17 @@ const triggerReprocessAsr = async () => {
           :class="[selectedReportType === type ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700', 'px-3 py-1 rounded text-xs']"
         >
           {{ type }}
+        </button>
+      </div>
+      <div v-if="categoryReportKeys.length" class="mb-4 flex flex-wrap items-center gap-2">
+        <span class="text-sm text-gray-600">{{ t('author.categoryReportLabel') }}:</span>
+        <button
+          v-for="cat in categoryReportKeys"
+          :key="cat"
+          @click="selectedCategory = cat"
+          :class="[selectedCategory === cat ? 'bg-fuchsia-600 text-white' : 'bg-gray-100 text-gray-700', 'px-3 py-1 rounded text-xs']"
+        >
+          {{ cat }}
         </button>
       </div>
       <div class="prose max-w-none" v-html="renderReport"></div>

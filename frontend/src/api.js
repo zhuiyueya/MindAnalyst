@@ -38,6 +38,9 @@ export default {
   generateCategories(id) {
     return apiClient.post(`/authors/${id}/generate_categories`);
   },
+  generateCategoryReports(id) {
+    return apiClient.post(`/authors/${id}/generate_category_reports`);
+  },
   reprocessAuthorAsr(id) {
     return apiClient.post(`/authors/${id}/reprocess_asr`);
   },

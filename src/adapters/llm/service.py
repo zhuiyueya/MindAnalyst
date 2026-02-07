@@ -95,6 +95,14 @@ class LLMService:
         if not content:
             return {"raw_text": "", "parse_error": "empty response"}
 
+        def _normalize(candidate: str) -> str:
+            normalized = candidate
+            normalized = normalized.replace("\u201c", '"').replace("\u201d", '"')
+            normalized = normalized.replace("\u2018", "'").replace("\u2019", "'")
+            normalized = normalized.replace("“", '"').replace("”", '"')
+            normalized = normalized.replace("‘", "'").replace("’", "'")
+            return normalized
+
         candidates: List[str] = []
         stripped = content.strip()
         candidates.append(stripped)
@@ -122,14 +130,23 @@ class LLMService:
                 return parsed if isinstance(parsed, dict) else {"raw": parsed}
             except Exception as exc:
                 last_error = exc
+
+            normalized = _normalize(cleaned)
+            if normalized != cleaned:
                 try:
-                    parsed = ast.literal_eval(cleaned)
-                    if isinstance(parsed, dict):
-                        return parsed
-                    if isinstance(parsed, list):
-                        return {"raw": parsed}
-                except Exception as inner_exc:
-                    last_error = inner_exc
+                    parsed = json.loads(normalized)
+                    return parsed if isinstance(parsed, dict) else {"raw": parsed}
+                except Exception as exc:
+                    last_error = exc
+
+            try:
+                parsed = ast.literal_eval(normalized)
+                if isinstance(parsed, dict):
+                    return parsed
+                if isinstance(parsed, list):
+                    return {"raw": parsed}
+            except Exception as inner_exc:
+                last_error = inner_exc
                 continue
 
         return {"raw_text": content, "parse_error": str(last_error) if last_error else "invalid json"}
