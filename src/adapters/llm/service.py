@@ -4,7 +4,7 @@ import json
 import re
 import ast
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from openai import AsyncOpenAI
 from src.core.config import settings
 from src.prompts.manager import PromptManager
@@ -22,6 +22,25 @@ class LLMService:
         self.prompt_manager = PromptManager()
         self.prompt_registry = PromptRegistry()
         self.model_registry = ModelProviderRegistry()
+
+    async def _chat_completion(
+        self,
+        *,
+        client: AsyncOpenAI,
+        model_name: str,
+        messages: List[Dict[str, str]],
+        require_json: bool,
+    ) -> Tuple[Any, Optional[str]]:
+        kwargs: Dict[str, Any] = {"model": model_name, "messages": messages}
+        if require_json:
+            kwargs["response_format"] = {"type": "json_object"}
+        response = await client.chat.completions.create(**kwargs)
+        content = None
+        try:
+            content = response.choices[0].message.content
+        except Exception:
+            content = None
+        return response, content
 
     def _ensure_list(self, value) -> List[Any]:
         if value is None:
@@ -309,17 +328,17 @@ class LLMService:
             return None
 
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
-                    {"role": "user", "content": prompts["user"]}
+                    {"role": "user", "content": prompts["user"]},
                 ],
-                response_format={"type": "json_object"}
+                require_json=True,
             )
             logger.info("LLM raw response (content.classify): %s", self._response_to_debug(response))
-            content = response.choices[0].message.content
-            data = json.loads(content)
+            data = json.loads(content or "{}")
             value = data.get("content_type") if isinstance(data, dict) else None
             await self._log_call(
                 task_type="content.classify",
@@ -380,17 +399,17 @@ class LLMService:
         }
 
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
-                    {"role": "user", "content": prompts["user"]}
+                    {"role": "user", "content": prompts["user"]},
                 ],
-                response_format={"type": "json_object"}
+                require_json=True,
             )
             logger.info("LLM raw response (summary.short): %s", self._response_to_debug(response))
-            content = response.choices[0].message.content or ""
-            raw = self._parse_json_response(content)
+            raw = self._parse_json_response(content or "")
             await self._log_call(
                 task_type="summary.short",
                 content_type=resolved_type,
@@ -455,16 +474,17 @@ class LLMService:
         }
         
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
-                    {"role": "user", "content": prompts["user"]}
-                ]
+                    {"role": "user", "content": prompts["user"]},
+                ],
+                require_json=False,
             )
             logger.info("LLM raw response (summary.single): %s", self._response_to_debug(response))
-            content = response.choices[0].message.content or ""
-            raw_text = content.strip()
+            raw_text = (content or "").strip()
             blocks = self._parse_summary_blocks(raw_text)
             await self._log_call(
                 task_type=task_type,
@@ -546,16 +566,16 @@ class LLMService:
         }
         
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
-                    {"role": "user", "content": prompts["user"]}
+                    {"role": "user", "content": prompts["user"]},
                 ],
-                response_format={"type": "json_object"}
+                require_json=True,
             )
             logger.info("LLM raw response (report.author): %s", self._response_to_debug(response))
-            content = response.choices[0].message.content
             raw = self._parse_json_response(content)
             await self._log_call(
                 task_type="report.author",
@@ -616,14 +636,14 @@ class LLMService:
         }
         
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[{"role": "user", "content": prompts["user"]}],
-                response_format={"type": "json_object"}
+                require_json=True,
             )
             logger.info("LLM raw response (rag.rerank): %s", self._response_to_debug(response))
-            content = response.choices[0].message.content
-            result = json.loads(content)
+            result = json.loads(content or "{}")
             await self._log_call(
                 task_type="rag.rerank",
                 content_type=resolved_type,
@@ -669,15 +689,16 @@ class LLMService:
             "context_chars": len(context_str)
         }
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompts["system"]},
-                    {"role": "user", "content": prompts["user"]}
-                ]
+                    {"role": "user", "content": prompts["user"]},
+                ],
+                require_json=False,
             )
             logger.info("LLM raw response (rag.answer): %s", self._response_to_debug(response))
-            content = response.choices[0].message.content
             await self._log_call(
                 task_type="rag.answer",
                 content_type=resolved_type,
@@ -690,7 +711,7 @@ class LLMService:
                 response_meta={"finish_reason": response.choices[0].finish_reason},
                 usage=getattr(response, "usage", None)
             )
-            return content
+            return content or ""
         except Exception as e:
             await self._log_call(
                 task_type="rag.answer",
@@ -724,15 +745,15 @@ class LLMService:
         }
         content = None
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": payload}
+                    {"role": "user", "content": payload},
                 ],
-                response_format={"type": "json_object"}
+                require_json=True,
             )
-            content = response.choices[0].message.content
             data = self._parse_json_response(content)
             await self._log_call(
                 task_type="batch.select_candidates",
@@ -776,15 +797,15 @@ class LLMService:
         request_meta = {"item_count": len(items), "top_n": top_n}
         content = None
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": payload}
+                    {"role": "user", "content": payload},
                 ],
-                response_format={"type": "json_object"}
+                require_json=True,
             )
-            content = response.choices[0].message.content
             data = self._parse_json_response(content)
             await self._log_call(
                 task_type="batch.final_select",
@@ -828,15 +849,15 @@ class LLMService:
         request_meta = {"candidate_category_count": len(category_list), "summary_count": len(summaries)}
         content = None
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": payload}
+                    {"role": "user", "content": payload},
                 ],
-                response_format={"type": "json_object"}
+                require_json=True,
             )
-            content = response.choices[0].message.content
             data = self._parse_json_response(content)
             await self._log_call(
                 task_type="author.final_categories",
@@ -880,15 +901,15 @@ class LLMService:
         request_meta = {"category_count": len(category_list)}
         content = None
         try:
-            response = await client.chat.completions.create(
-                model=model_name,
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": payload}
+                    {"role": "user", "content": payload},
                 ],
-                response_format={"type": "json_object"}
+                require_json=True,
             )
-            content = response.choices[0].message.content
             data = self._parse_json_response(content)
             await self._log_call(
                 task_type="video.category_tagging",

@@ -1,7 +1,8 @@
-
 import json
 import logging
-from typing import List, Dict, Optional, Any
+import time
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from src.models.models import ContentItem, Segment, Summary, AuthorReport, Author
@@ -555,12 +556,25 @@ class AnalysisWorkflow:
         logger.info("Generating category reports for author %s", author_id)
         author = await self.session.get(Author, author_id)
         if not author:
+            logger.warning("Category reports early return: author_not_found author_id=%s", author_id)
             return {"error": "author_not_found"}
 
         content_type = author.author_type or "generic"
         categories = [str(x) for x in (author.category_list or []) if str(x).strip()]
         if not categories:
+            logger.warning(
+                "Category reports early return: category_list_empty author_id=%s content_type=%s",
+                author_id,
+                content_type,
+            )
             return {"error": "category_list_empty"}
+
+        logger.info(
+            "Category reports preflight: author_id=%s content_type=%s categories=%s",
+            author_id,
+            content_type,
+            len(categories),
+        )
 
         stmt = (
             select(Summary, ContentItem)
@@ -572,12 +586,29 @@ class AnalysisWorkflow:
         result = await self.session.execute(stmt)
         rows = result.all()
         if not rows:
+            logger.warning(
+                "Category reports early return: no_summaries author_id=%s content_type=%s",
+                author_id,
+                content_type,
+            )
             return {"error": "no_summaries"}
+
+        logger.info(
+            "Category reports fetched summaries: author_id=%s row_count=%s",
+            author_id,
+            len(rows),
+        )
 
         latest_by_content: Dict[str, tuple[Summary, ContentItem]] = {}
         for summary, content in rows:
             if summary.content_id and summary.content_id not in latest_by_content:
                 latest_by_content[summary.content_id] = (summary, content)
+
+        logger.info(
+            "Category reports latest summaries: author_id=%s latest_by_content=%s",
+            author_id,
+            len(latest_by_content),
+        )
 
         summaries_by_category: Dict[str, List[tuple[Summary, ContentItem]]] = {c: [] for c in categories}
         for summary, content in latest_by_content.values():
@@ -590,13 +621,36 @@ class AnalysisWorkflow:
                 continue
             summaries_by_category[cat].append((summary, content))
 
+        logger.info(
+            "Category reports grouped: author_id=%s category_nonempty=%s/%s",
+            author_id,
+            sum(1 for c in categories if summaries_by_category.get(c)),
+            len(categories),
+        )
+
         generated = 0
         skipped = 0
-        for category in categories:
+        for idx_category, category in enumerate(categories, start=1):
             items = summaries_by_category.get(category) or []
             if not items:
                 skipped += 1
+                logger.info(
+                    "Category report batch skipped (no items): author_id=%s category=%s batch=%s/%s",
+                    author_id,
+                    category,
+                    idx_category,
+                    len(categories),
+                )
                 continue
+
+            logger.info(
+                "Category report batch start: author_id=%s category=%s batch=%s/%s video_count=%s",
+                author_id,
+                category,
+                idx_category,
+                len(categories),
+                len(items),
+            )
 
             context_parts: List[str] = []
             for idx, (summary, content) in enumerate(items, start=1):
@@ -606,11 +660,47 @@ class AnalysisWorkflow:
             context_override = "\n\n".join([x for x in context_parts if x]).strip()
             if not context_override:
                 skipped += 1
+                logger.info(
+                    "Category report batch skipped (empty context): author_id=%s category=%s batch=%s/%s video_count=%s",
+                    author_id,
+                    category,
+                    idx_category,
+                    len(categories),
+                    len(items),
+                )
                 continue
 
-            result = await self.llm.generate_author_report([], content_type, context_override=context_override)
+            started_at = time.monotonic()
+            try:
+                result = await self.llm.generate_author_report([], content_type, context_override=context_override)
+            except Exception as exc:
+                skipped += 1
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                logger.error(
+                    "Category report batch failed: author_id=%s category=%s batch=%s/%s video_count=%s elapsed_ms=%s error=%s",
+                    author_id,
+                    category,
+                    idx_category,
+                    len(categories),
+                    len(items),
+                    elapsed_ms,
+                    exc,
+                )
+                continue
+
             if not isinstance(result, dict) or "error" in result:
                 skipped += 1
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                logger.warning(
+                    "Category report batch returned error: author_id=%s category=%s batch=%s/%s video_count=%s elapsed_ms=%s result=%s",
+                    author_id,
+                    category,
+                    idx_category,
+                    len(categories),
+                    len(items),
+                    elapsed_ms,
+                    result,
+                )
                 continue
 
             raw = result.get("raw") if isinstance(result, dict) else None
@@ -636,6 +726,19 @@ class AnalysisWorkflow:
             self.session.add(report)
             await self.session.commit()
             generated += 1
+
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            logger.info(
+                "Category report batch saved: author_id=%s category=%s batch=%s/%s video_count=%s elapsed_ms=%s generated=%s skipped=%s",
+                author_id,
+                category,
+                idx_category,
+                len(categories),
+                len(items),
+                elapsed_ms,
+                generated,
+                skipped,
+            )
 
         return {"generated": generated, "skipped": skipped, "categories": categories}
 
