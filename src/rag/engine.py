@@ -1,11 +1,14 @@
-import os
+import logging
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+
 from src.adapters.llm.service import LLMService
-from src.models.models import Segment, ContentItem, Summary
+from src.models.models import AuthorReport, ContentItem, RagIndexItem
 from src.rag.retrieval import RetrievalService
 from src.rag.rerank import RerankService
-from typing import List, Dict
-from sqlalchemy.ext.asyncio import AsyncSession
-import logging
+from src.rag.router import RagRouter
 
 logger = logging.getLogger(__name__)
 
@@ -15,66 +18,118 @@ class RAGEngine:
         self.retrieval = RetrievalService(session)
         self.reranker = RerankService()
         self.llm = LLMService()
+        self.router = RagRouter()
 
-    def _resolve_content_type(self, segments: List[Segment]) -> str:
-        for seg in segments:
-            if seg.content and seg.content.content_type:
-                return seg.content.content_type
+    def _resolve_content_type_from_items(self, items: List[RagIndexItem]) -> str:
+        for it in items:
+            content = getattr(it, "content_item", None)
+            if content and getattr(content, "content_type", None):
+                return content.content_type
         return "generic"
 
-    async def retrieve(self, query: str, author_id: str = None, top_k: int = 10) -> List[Segment]:
-        """
-        Two-stage retrieval:
-        1. Hybrid Search (Content-level Summary + Segment Vector)
-        2. Rerank
-        """
-        # 1. Recall
-        # Recall more candidates for reranking (e.g. 20)
-        candidates = await self.retrieval.retrieve_candidates(query, author_id, limit=top_k * 2)
-        
+    async def _load_author_reports(self, author_id: str, limit: int = 5) -> List[AuthorReport]:
+        stmt = (
+            select(AuthorReport)
+            .where(AuthorReport.author_id == author_id)
+            .order_by(AuthorReport.created_at.desc())
+            .limit(limit)
+        )
+        res = await self.session.execute(stmt)
+        return res.scalars().all()
+
+    async def retrieve(
+        self,
+        query: str,
+        author_id: Optional[str] = None,
+        source_type: str = "summary_chunk",
+        tags: Optional[List[str]] = None,
+        top_k: int = 10,
+    ) -> List[RagIndexItem]:
+        candidates = await self.retrieval.retrieve_candidates(
+            query,
+            author_id=author_id,
+            source_type=source_type,
+            tags=tags,
+            limit=top_k * 2,
+        )
+
         if not candidates:
             return []
 
-        # 2. Rerank
-        content_type = self._resolve_content_type(candidates)
-        reranked_segments = await self.reranker.rerank(query, candidates, top_k=top_k, content_type=content_type)
-        return reranked_segments
+        content_type = self._resolve_content_type_from_items(candidates)
+        reranked = await self.reranker.rerank(query, candidates, top_k=top_k, content_type=content_type)
+        return reranked
+
+    def _build_item_context_and_citations(self, items: List[RagIndexItem]) -> tuple[str, List[Dict[str, Any]]]:
+        context_parts: List[str] = []
+        citations: List[Dict[str, Any]] = []
+
+        for i, it in enumerate(items, start=1):
+            content: Optional[ContentItem] = getattr(it, "content_item", None)
+            title = content.title if content else "Unknown"
+            url = content.url if content else ""
+            tag = (it.tag or "").strip() if it.source_type == "summary_chunk" else ""
+
+            prefix = f"[{i}]"
+            if tag:
+                prefix += f" [{tag}]"
+            prefix += f" 《{title}》"
+
+            context_text = it.text_raw or it.text_for_embedding or ""
+            context_parts.append(f"{prefix}: {context_text}")
+
+            citations.append(
+                {
+                    "index": i,
+                    "rag_id": it.id,
+                    "source_type": it.source_type,
+                    "summary_id": it.summary_id,
+                    "content_id": it.content_id,
+                    "title": title,
+                    "url": url,
+                    "tag": tag or None,
+                    "text": context_text,
+                }
+            )
+
+        return "\n\n".join(context_parts).strip(), citations
 
     async def chat(self, query: str, author_id: str = None) -> Dict:
         """RAG Chat"""
-        # 1. Retrieve
-        segments = await self.retrieve(query, author_id=author_id)
-        
-        if not segments:
-            return {"answer": "未找到相关内容。", "citations": []}
-            
-        # 2. Assemble Context
-        context_str = ""
-        citations = []
-        
-        for i, seg in enumerate(segments):
-            # Format: [i] Title (00:00): Text
-            start_sec = seg.start_time_ms // 1000
-            time_str = f"{start_sec//60:02d}:{start_sec%60:02d}"
-            title = seg.content.title if seg.content else "Unknown"
-            
-            context_str += f"[{i+1}] 《{title}》时间戳 {time_str}: {seg.text}\n\n"
-            
-            citations.append({
-                "index": i+1,
-                "segment_id": seg.id,
-                "text": seg.text,
-                "start_time": start_sec,
-                "title": title,
-                "url": f"https://www.bilibili.com/video/{seg.content.external_id}?t={start_sec}" if seg.content else ""
-            })
-            
-        content_type = self._resolve_content_type(segments)
+        route_decision = await self.router.route(query, author_id=author_id)
+        route = route_decision.get("route")
+        tags = route_decision.get("tags") or []
+        routed_query = route_decision.get("query") or query
 
-        # 3. Generate Answer
+        if route == "author_report" and author_id:
+            reports = await self._load_author_reports(author_id, limit=10)
+            if not reports:
+                return {"answer": "未找到相关作者报告。", "citations": []}
+
+            context_parts = []
+            citations: List[Dict[str, Any]] = []
+            for idx, rep in enumerate(reports, start=1):
+                context_parts.append(f"[R{idx}] report_type={rep.report_type} version={rep.report_version}\n{rep.content}")
+                citations.append(
+                    {
+                        "index": idx,
+                        "report_id": rep.id,
+                        "report_type": rep.report_type,
+                        "created_at": rep.created_at.isoformat() if rep.created_at else None,
+                    }
+                )
+            context_str = "\n\n".join(context_parts)
+            answer = await self.llm.generate_rag_answer(query, context_str, content_type="generic")
+            return {"answer": answer, "citations": citations}
+
+        source_type = "summary_short" if route == "summary_short" else "summary_chunk"
+        items = await self.retrieve(routed_query, author_id=author_id, source_type=source_type, tags=tags, top_k=10)
+
+        if not items:
+            return {"answer": "未找到相关内容。", "citations": []}
+
+        context_str, citations = self._build_item_context_and_citations(items)
+        content_type = self._resolve_content_type_from_items(items)
         answer = await self.llm.generate_rag_answer(query, context_str, content_type)
 
-        return {
-            "answer": answer,
-            "citations": citations
-        }
+        return {"answer": answer, "citations": citations}

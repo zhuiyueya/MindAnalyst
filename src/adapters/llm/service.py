@@ -673,6 +673,58 @@ class LLMService:
             logger.error(f"Rerank failed: {e}")
             return list(range(min(len(documents), top_n)))
 
+    async def classify_rag_intent(self, query: str, prompt: str) -> Dict[str, Any]:
+        """Classify query intent for RAG routing.
+
+        Returns a dict like: {"route": "author_report"|"summary_chunk"|"summary_short", "tags": [...], "query": "..."}
+        """
+        client, model_name, model_id, provider = self._get_client_for_scene("rag.rerank")
+        if not client:
+            return {"route": "summary_chunk", "tags": [], "query": query}
+
+        request_meta = {"query_chars": len(query)}
+        content = None
+        try:
+            response, content = await self._chat_completion(
+                client=client,
+                model_name=model_name,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": query},
+                ],
+                require_json=True,
+            )
+            logger.info("LLM raw response (rag.router): %s", self._response_to_debug(response))
+            data = self._parse_json_response(content)
+            await self._log_call(
+                task_type="rag.router",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=query,
+                model=getattr(response, "model", model_name),
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                response_meta={"finish_reason": response.choices[0].finish_reason},
+                usage=getattr(response, "usage", None),
+            )
+            return data if isinstance(data, dict) else {"raw": data}
+        except Exception as e:
+            await self._log_call(
+                task_type="rag.router",
+                content_type=None,
+                profile_key=None,
+                system_prompt=prompt,
+                user_prompt=query,
+                model=model_name,
+                request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
+                status="error",
+                error_message=str(e),
+            )
+            logger.error("RAG router classify failed: %s", e)
+            return {"route": "summary_chunk", "tags": [], "query": query, "error": str(e)}
+
     async def generate_rag_answer(self, query: str, context_str: str, content_type: Optional[str]) -> str:
         resolved_type = content_type or "generic"
         profile_key = self.prompt_registry.get_prompt_key("rag.answer", resolved_type, require_override=True)

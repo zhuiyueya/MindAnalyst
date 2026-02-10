@@ -16,6 +16,7 @@ from src.workflows.ingestion import IngestionWorkflow
 from src.workflows.analysis import AnalysisWorkflow
 from src.adapters.storage.service import StorageService
 from src.rag.engine import RAGEngine
+from src.rag.indexing import RagIndexingService
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import logging
@@ -100,6 +101,9 @@ class ContentTypeRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     citations: List[dict]
+
+class RagReindexRequest(BaseModel):
+    author_id: Optional[str] = None
 
 # API Endpoints
 
@@ -805,6 +809,53 @@ async def chat(req: ChatRequest, session: AsyncSession = Depends(get_session)):
     engine = RAGEngine(session)
     result = await engine.chat(req.query, author_id=req.author_id)
     return result
+
+
+async def run_rag_reindex_author_task(author_id: str):
+    logger.info("Starting RAG reindex for author %s", author_id)
+    async for session in get_session():
+        try:
+            indexer = RagIndexingService(session)
+            result = await indexer.reindex_author(author_id)
+            logger.info("RAG reindex done: %s", result)
+        except Exception as e:
+            logger.error("RAG reindex failed for author %s: %s", author_id, e)
+        break
+
+
+async def run_rag_reindex_all_task():
+    logger.info("Starting RAG reindex for all authors")
+    async for session in get_session():
+        try:
+            stmt = select(Author)
+            res = await session.execute(stmt)
+            authors = res.scalars().all()
+            indexer = RagIndexingService(session)
+            total_indexed = 0
+            total_skipped = 0
+            for idx, author in enumerate(authors, start=1):
+                logger.info("RAG reindex progress: %s/%s author_id=%s", idx, len(authors), author.id)
+                result = await indexer.reindex_author(author.id)
+                total_indexed += int(result.get("indexed") or 0)
+                total_skipped += int(result.get("skipped") or 0)
+            logger.info(
+                "RAG reindex all done: author_count=%s total_indexed=%s total_skipped=%s",
+                len(authors),
+                total_indexed,
+                total_skipped,
+            )
+        except Exception as e:
+            logger.error("RAG reindex all failed: %s", e)
+        break
+
+
+@app.post("/api/v1/rag/reindex")
+async def rag_reindex(req: RagReindexRequest, background_tasks: BackgroundTasks):
+    if req.author_id:
+        background_tasks.add_task(run_rag_reindex_author_task, req.author_id)
+        return {"status": "started", "scope": "author", "author_id": req.author_id}
+    background_tasks.add_task(run_rag_reindex_all_task)
+    return {"status": "started", "scope": "all"}
 
 if __name__ == "__main__":
     import uvicorn

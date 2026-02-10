@@ -2,7 +2,8 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, Text
+from sqlalchemy import Column, Text, Computed
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from pydantic import field_serializer
 import uuid
 
@@ -43,6 +44,7 @@ class ContentItem(SQLModel, table=True):
     author: Author = Relationship(back_populates="contents")
     segments: List["Segment"] = Relationship(back_populates="content")
     summaries: List["Summary"] = Relationship(back_populates="content_item")
+    rag_index_items: List["RagIndexItem"] = Relationship(back_populates="content_item")
 
 class Segment(SQLModel, table=True):
     id: str = Field(default_factory=generate_uuid, primary_key=True)
@@ -75,6 +77,7 @@ class Summary(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     content_item: ContentItem = Relationship(back_populates="summaries")
+    rag_index_items: List["RagIndexItem"] = Relationship(back_populates="summary")
 
 class AuthorReport(SQLModel, table=True):
     id: str = Field(default_factory=generate_uuid, primary_key=True)
@@ -105,6 +108,38 @@ class LLMCallLog(SQLModel, table=True):
     status: str = Field(default="success", index=True)
     error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class RagIndexItem(SQLModel, table=True):
+    __tablename__ = "rag_index_item"
+
+    id: str = Field(default_factory=generate_uuid, primary_key=True)
+    source_type: str = Field(index=True)  # summary_chunk | summary_short
+    author_id: str = Field(index=True, foreign_key="author.id")
+    content_id: str = Field(index=True, foreign_key="contentitem.id")
+    summary_id: str = Field(index=True, foreign_key="summary.id")
+
+    tag: Optional[str] = Field(default=None, index=True)
+    chunk_index: Optional[int] = Field(default=None)
+    video_category: str = Field(default="通用领域", index=True)
+
+    text_raw: str = Field(default="", sa_column=Column(Text))
+    text_for_embedding: str = Field(default="", sa_column=Column(Text))
+    embedding: List[float] = Field(sa_column=Column(Vector(384)))
+    tsv: Any = Field(sa_column=Column(TSVECTOR, Computed("to_tsvector('simple', coalesce(text_raw,''))", persisted=True)))
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+    content_item: Optional["ContentItem"] = Relationship(back_populates="rag_index_items")
+    summary: Optional["Summary"] = Relationship(back_populates="rag_index_items")
+
+    @field_serializer("embedding")
+    def _serialize_embedding(self, v):
+        if v is None:
+            return None
+        if hasattr(v, "tolist"):
+            v = v.tolist()
+        return [float(x) for x in v]
 
 # Update Author to include reports relationship
 # We need to do this carefully since Author is defined above.
