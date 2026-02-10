@@ -12,7 +12,6 @@ from src.adapters.sources.bilibili.browser import BrowserCrawler
 from src.adapters.asr.service import ASRService
 from src.adapters.storage.service import StorageService
 from src.database.db import get_session
-from sentence_transformers import SentenceTransformer
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,17 +23,6 @@ class IngestionWorkflow:
         self.browser_crawler = None # Lazy init
         self.asr = ASRService()
         self.storage = StorageService() # MinIO
-        
-        # Load embedding model lazily or globally. For MVP, load here.
-        if os.getenv("MOCK_EMBEDDING"):
-            self.embedder = None
-            logger.info("Using MOCK embedding")
-        else:
-            try:
-                self.embedder = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-            except Exception as e:
-                logger.warning(f"Failed to load local embedder: {e}")
-                self.embedder = None
 
     async def _store_author_avatar(self, avatar_url: str, author_external_id: str) -> Optional[str]:
         if not avatar_url:
@@ -510,11 +498,6 @@ class IngestionWorkflow:
             saved_segments = []
             for i, chunk in enumerate(chunks):
                 text_content = chunk["text"]
-                # Embedding
-                if self.embedder:
-                    vector = self.embedder.encode(text_content).tolist()
-                else:
-                    vector = [0.0] * 384 # Dummy
                 
                 segment = Segment(
                     content_id=content.id,
@@ -522,7 +505,6 @@ class IngestionWorkflow:
                     start_time_ms=int(chunk["from"] * 1000),
                     end_time_ms=int(chunk["to"] * 1000),
                     text=text_content,
-                    embedding=vector
                 )
                 self.session.add(segment)
                 saved_segments.append(segment)

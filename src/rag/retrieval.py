@@ -17,14 +17,11 @@ logger = logging.getLogger(__name__)
 class RetrievalService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        if os.getenv("MOCK_EMBEDDING"):
+        try:
+            self.embedder = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+        except Exception as e:
+            logger.warning("Failed to load embedder: %s", e)
             self.embedder = None
-        else:
-            try:
-                self.embedder = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-            except Exception as e:
-                logger.warning("Failed to load embedder: %s", e)
-                self.embedder = None
 
     def _embed(self, text: str) -> List[float]:
         if self.embedder:

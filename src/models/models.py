@@ -54,7 +54,7 @@ class Segment(SQLModel, table=True):
     end_time_ms: int
     text: str
     # 'paraphrase-multilingual-MiniLM-L12-v2' outputs 384 dimensions
-    embedding: List[float] = Field(sa_column=Column(Vector(384))) 
+    embedding: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(384), nullable=True))
     
     @field_serializer("embedding")
     def _serialize_embedding(self, v):

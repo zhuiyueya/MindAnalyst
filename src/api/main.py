@@ -762,30 +762,19 @@ async def ingest_author(
     session: AsyncSession = Depends(get_session)
 ):
     """
-    Trigger background ingestion for an author.
-    If input looks like a URL, use BrowserCrawler.
-    Otherwise assume MID and use Bilix/Browser.
+    触发作者的后台采集任务。
+    使用BrowserCrawler来爬取，避免反爬机制。
     """
     logger.info(f"Received ingest request for {req.author_id}")
-    
-    # Check if we should use BrowserCrawler based on input
-    use_browser = False
-    # If it's a URL, or we suspect API issues (which we do now), use browser.
-    # Actually, let's default to browser for stability given API rate limits.
-    # But for backward compatibility with pure MID inputs:
-    if "bilibili.com" in req.author_id or "http" in req.author_id:
-        use_browser = True
-    else:
+
+    # 标准化输入：如果不是URL，则转换为完整URL
+    if "bilibili.com" not in req.author_id and "http" not in req.author_id:
         req.author_id = f"https://space.bilibili.com/{req.author_id}"
-        use_browser = True
-    
-    # We need a new session for background task since the dep session closes
-    # But BackgroundTasks with async functions is tricky with sessions.
-    # Better approach: Run it immediately (blocking) for MVP or handle session properly.
-    # For MVP, let's run it in background but we need to manage session lifecycle.
-    # We will instantiate a new session inside the background wrapper.
-    
-    background_tasks.add_task(run_ingestion_task, req.author_id, req.limit, use_browser)
+
+    # 我们需要为后台任务创建一个新的session，因为依赖注入的session会关闭
+    # 我们将在后台包装器中实例化一个新的session。
+
+    background_tasks.add_task(run_ingestion_task, req.author_id, req.limit, True)
     
     return {"status": "started", "message": f"Ingestion started for {req.author_id}"}
 

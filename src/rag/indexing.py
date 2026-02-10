@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -48,15 +47,11 @@ def _split_by_tags(text: str) -> List[Tuple[str, str]]:
 class RagIndexingService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        if os.getenv("MOCK_EMBEDDING"):
+        try:
+            self.embedder = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+        except Exception as e:
+            logger.warning("Failed to load embedder: %s", e)
             self.embedder = None
-            logger.info("RAG indexing using MOCK embedding")
-        else:
-            try:
-                self.embedder = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-            except Exception as e:
-                logger.warning("Failed to load embedder: %s", e)
-                self.embedder = None
 
     def _embed(self, text: str) -> List[float]:
         if self.embedder:
