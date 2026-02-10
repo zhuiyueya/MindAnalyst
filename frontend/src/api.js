@@ -72,6 +72,13 @@ export default {
     return apiClient.post('/chat', data);
   },
 
+  // RAG
+  ragReindex(authorId = null) {
+    return apiClient.post('/rag/reindex', {
+      author_id: authorId,
+    });
+  },
+
   // LLM Logs
   listLlmCalls(params = {}) {
     return apiClient.get('/llm_calls', { params });

@@ -118,6 +118,12 @@
     "confirmResummarizeIncludeFallback": "重新总结该视频（包含回退转写）？",
     "confirmReprocessAsr": "重新抓取该视频的转写（ASR/字幕）？"
   },
+  "rag": {
+    "reindexAuthor": "重建 RAG 索引（当前作者）",
+    "reindexAll": "重建 RAG 索引（全量作者）",
+    "confirmReindexAuthor": "开始重建该作者的 RAG 索引？这可能需要一段时间。",
+    "confirmReindexAll": "开始重建全部作者的 RAG 索引？这可能需要较长时间。"
+  },
   "ingest": {
     "title": "采集作者视频",
     "midLabel": "Bilibili 作者 MID",
@@ -139,6 +145,7 @@
     "allAuthors": "全部作者",
     "refreshAuthors": "刷新作者列表",
     "sources": "来源：",
+    "tagPlaceholder": "标签过滤（逗号分隔，例如：观点,金句）",
     "askPlaceholder": "请输入问题...",
     "send": "发送",
     "errorPrefix": "错误："

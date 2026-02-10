@@ -72,6 +72,9 @@ class RetrievalService:
         sparse_res = await self.session.execute(sparse_stmt)
         sparse_items = sparse_res.scalars().all()
 
+        if source_type == "summary_short" and not sparse_items:
+            return []
+
         merged: List[RagIndexItem] = []
         seen = set()
         for item in dense_items + sparse_items:

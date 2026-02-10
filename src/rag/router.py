@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from src.adapters.llm.service import LLMService
@@ -30,6 +31,29 @@ class RagRouter:
             "- 如果用户在问‘有没有聊过某话题/提到过XXX吗’，使用 summary_short。\n"
             "输出严格 JSON：{\"route\":..., \"tags\":[...], \"query\":...}。tags 可为空数组。query 可原样返回。"
         )
+
+        normalized = (query or "").strip()
+        if normalized:
+            # Explicit tag forcing syntax (frontend test UI)
+            # Examples:
+            # - tag:观点,金句 你的问题
+            # - #tag=实操 如何...
+            m = re.match(r"^\s*(?:#?tag\s*[:=]\s*)([^\s]+)\s*(.*)$", normalized, re.IGNORECASE)
+            if m:
+                tag_str = (m.group(1) or "").strip()
+                rest_q = (m.group(2) or "").strip() or normalized
+                forced_tags = [x.strip() for x in re.split(r"[,，]", tag_str) if x.strip()]
+                return {"route": "summary_chunk", "tags": forced_tags, "query": rest_q}
+
+            # Heuristic fallback for offline / no-LLM environments
+            if author_id and any(k in normalized for k in ["是谁", "什么人", "核心思想", "核心观点", "体系", "理念", "总结"]):
+                return {"route": "author_report", "tags": [], "query": normalized}
+            if any(k in normalized for k in ["有没有", "是否", "提到", "聊过", "讲过"]):
+                return {"route": "summary_short", "tags": [], "query": normalized}
+            if any(k in normalized for k in ["怎么办", "怎么做", "方法", "步骤", "建议", "实操"]):
+                return {"route": "summary_chunk", "tags": ["实操"], "query": normalized}
+            if any(k in normalized for k in ["观点", "认知", "洞见", "金句", "打破"]):
+                return {"route": "summary_chunk", "tags": ["观点", "金句"], "query": normalized}
 
         try:
             data = await self.llm.classify_rag_intent(query=query, prompt=prompt)

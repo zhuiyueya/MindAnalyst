@@ -118,6 +118,12 @@
     "confirmResummarizeIncludeFallback": "Re-summarize this video (including fallback transcript)?",
     "confirmReprocessAsr": "Re-fetch transcript (ASR/subtitles) for this video?"
   },
+  "rag": {
+    "reindexAuthor": "Reindex RAG (This Author)",
+    "reindexAll": "Reindex RAG (All Authors)",
+    "confirmReindexAuthor": "Start rebuilding RAG index for this author? This may take a while.",
+    "confirmReindexAll": "Start rebuilding RAG index for ALL authors? This may take a long time."
+  },
   "ingest": {
     "title": "Ingest Author Videos",
     "midLabel": "Bilibili Author MID",
@@ -139,6 +145,7 @@
     "allAuthors": "All Authors",
     "refreshAuthors": "Refresh Authors",
     "sources": "Sources:",
+    "tagPlaceholder": "Tag filter (comma-separated, e.g.观点,金句)",
     "askPlaceholder": "Ask a question...",
     "send": "Send",
     "errorPrefix": "Error: "

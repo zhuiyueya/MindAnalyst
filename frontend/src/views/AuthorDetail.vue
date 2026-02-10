@@ -283,6 +283,32 @@ const triggerGenerateCategoryReports = async () => {
   }
 }
 
+const triggerRagReindexAuthor = async () => {
+  if (!confirm(t('rag.confirmReindexAuthor'))) return
+  processing.value = true
+  try {
+    await api.ragReindex(authorId)
+    alert(t('common.batchTaskStarted'))
+  } catch (e) {
+    alert(t('common.failedPrefix') + e.message)
+  } finally {
+    processing.value = false
+  }
+}
+
+const triggerRagReindexAll = async () => {
+  if (!confirm(t('rag.confirmReindexAll'))) return
+  processing.value = true
+  try {
+    await api.ragReindex(null)
+    alert(t('common.batchTaskStarted'))
+  } catch (e) {
+    alert(t('common.failedPrefix') + e.message)
+  } finally {
+    processing.value = false
+  }
+}
+
 const triggerReprocessAsr = async () => {
   if (!confirm(t('author.confirmReprocessAsr'))) return
   processing.value = true
@@ -420,6 +446,20 @@ const triggerReprocessAsr = async () => {
               class="px-4 py-2 bg-fuchsia-600 text-white rounded hover:bg-fuchsia-700 disabled:opacity-50 text-sm"
             >
               {{ t('author.generateCategoryReports') }}
+            </button>
+            <button 
+              @click="triggerRagReindexAuthor"
+              :disabled="processing"
+              class="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-800 disabled:opacity-50 text-sm"
+            >
+              {{ t('rag.reindexAuthor') }}
+            </button>
+            <button 
+              @click="triggerRagReindexAll"
+              :disabled="processing"
+              class="px-4 py-2 bg-slate-600 text-white rounded hover:bg-slate-700 disabled:opacity-50 text-sm"
+            >
+              {{ t('rag.reindexAll') }}
             </button>
             <button 
               @click="triggerResummarizeAll(true)"

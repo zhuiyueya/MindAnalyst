@@ -24,6 +24,14 @@ class RerankService:
             else:
                 doc_texts.append(str(it.text_raw or ""))
         top_indices = await self.llm.rerank(query, doc_texts, top_n=top_k, content_type=content_type)
-        
+
+        if not top_indices:
+            logger.info("Rerank returned empty indices; fallback to original order top_k=%s", top_k)
+            return items[:top_k]
+
         reranked_items = [items[i] for i in top_indices if isinstance(i, int) and 0 <= i < len(items)]
+        if not reranked_items:
+            logger.info("Rerank returned only invalid indices=%s; fallback to original order top_k=%s", top_indices, top_k)
+            return items[:top_k]
+
         return reranked_items

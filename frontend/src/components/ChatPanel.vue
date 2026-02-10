@@ -13,6 +13,8 @@ const isLoading = ref(false)
 const messagesEndRef = ref(null)
 const authors = ref([])
 const selectedAuthorId = ref(null)
+const tagFilter = ref('')
+const isReindexing = ref(false)
 
 const fetchAuthors = async () => {
   try {
@@ -40,7 +42,9 @@ const scrollToBottom = () => {
 const handleChat = async () => {
   if (!query.value.trim() || isLoading.value) return
 
-  const userQuery = query.value
+  const rawQuery = query.value
+  const tags = (tagFilter.value || '').trim()
+  const userQuery = tags ? `tag:${tags} ${rawQuery}` : rawQuery
   messages.value.push({ role: 'user', content: userQuery })
   query.value = ''
   isLoading.value = true
@@ -67,6 +71,34 @@ const handleChat = async () => {
     scrollToBottom()
   }
 }
+
+const triggerReindexAuthor = async () => {
+  if (isReindexing.value) return
+  if (!confirm(t('rag.confirmReindexAuthor'))) return
+  isReindexing.value = true
+  try {
+    await axios.post('/api/v1/rag/reindex', { author_id: selectedAuthorId.value })
+    alert(t('common.batchTaskStarted'))
+  } catch (e) {
+    alert(t('common.failedPrefix') + (e.response?.data?.detail || e.message))
+  } finally {
+    isReindexing.value = false
+  }
+}
+
+const triggerReindexAll = async () => {
+  if (isReindexing.value) return
+  if (!confirm(t('rag.confirmReindexAll'))) return
+  isReindexing.value = true
+  try {
+    await axios.post('/api/v1/rag/reindex', { author_id: null })
+    alert(t('common.batchTaskStarted'))
+  } catch (e) {
+    alert(t('common.failedPrefix') + (e.response?.data?.detail || e.message))
+  } finally {
+    isReindexing.value = false
+  }
+}
 </script>
 
 <template>
@@ -84,10 +116,32 @@ const handleChat = async () => {
             {{ author.name }} ({{ author.platform }})
           </option>
         </select>
+        <input
+          v-model="tagFilter"
+          type="text"
+          :placeholder="t('chat.tagPlaceholder')"
+          class="block w-56 p-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+        />
       </div>
-      <button @click="fetchAuthors" class="text-xs text-indigo-600 hover:text-indigo-800">
-        {{ t('chat.refreshAuthors') }}
-      </button>
+      <div class="flex items-center space-x-3">
+        <button
+          @click="triggerReindexAuthor"
+          :disabled="isReindexing || !selectedAuthorId"
+          class="text-xs text-slate-700 hover:text-slate-900 disabled:opacity-50"
+        >
+          {{ t('rag.reindexAuthor') }}
+        </button>
+        <button
+          @click="triggerReindexAll"
+          :disabled="isReindexing"
+          class="text-xs text-slate-700 hover:text-slate-900 disabled:opacity-50"
+        >
+          {{ t('rag.reindexAll') }}
+        </button>
+        <button @click="fetchAuthors" class="text-xs text-indigo-600 hover:text-indigo-800">
+          {{ t('chat.refreshAuthors') }}
+        </button>
+      </div>
     </div>
 
     <!-- Chat History -->
@@ -110,10 +164,26 @@ const handleChat = async () => {
             <p class="font-semibold mb-2">{{ t('chat.sources') }}</p>
             <ul class="space-y-1">
               <li v-for="(cit, cIdx) in msg.citations" :key="cIdx" class="text-gray-600">
-                <a :href="cit.url" target="_blank" class="hover:underline hover:text-indigo-600 flex items-start">
+                <div class="flex items-start">
                   <span class="mr-1">[{{ cit.index }}]</span>
-                  <span>{{ cit.text.substring(0, 50) }}... ({{ Math.floor(cit.start_time / 60) }}:{{ String(Math.floor(cit.start_time % 60)).padStart(2, '0') }})</span>
-                </a>
+                  <div class="flex-1">
+                    <div class="flex flex-wrap items-center gap-x-2">
+                      <a v-if="cit.url" :href="cit.url" target="_blank" class="hover:underline hover:text-indigo-600">
+                        {{ cit.title || 'Untitled' }}
+                      </a>
+                      <span v-else class="text-gray-700">{{ cit.title || 'Untitled' }}</span>
+                      <span v-if="cit.tag" class="px-1.5 py-0.5 rounded bg-gray-200 text-gray-700">{{ cit.tag }}</span>
+                      <span v-if="cit.source_type" class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{{ cit.source_type }}</span>
+                    </div>
+                    <div class="mt-1 text-gray-700">
+                      {{ (cit.text || '').substring(0, 120) }}<span v-if="(cit.text || '').length > 120">...</span>
+                    </div>
+                    <div class="mt-1 text-[11px] text-gray-500">
+                      <span v-if="cit.summary_id">summary_id={{ cit.summary_id }}</span>
+                      <span v-if="cit.content_id" class="ml-2">content_id={{ cit.content_id }}</span>
+                    </div>
+                  </div>
+                </div>
               </li>
             </ul>
           </div>
