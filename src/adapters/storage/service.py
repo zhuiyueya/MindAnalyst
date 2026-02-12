@@ -1,9 +1,7 @@
 import os
-import shutil
-from typing import Optional, List
+from typing import Optional
 from minio import Minio
 from minio.error import S3Error
-from src.core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -62,8 +60,9 @@ class StorageService:
         try:
             objects = self.client.list_objects(self.bucket_name, prefix=prefix, recursive=True)
             for obj in objects:
-                if obj.object_name.startswith(prefix):
-                    return obj.object_name
+                object_name = getattr(obj, "object_name", None)
+                if isinstance(object_name, str) and object_name.startswith(prefix):
+                    return object_name
         except Exception as e:
             logger.error(f"Failed to list objects with prefix {prefix}: {e}")
         return None
