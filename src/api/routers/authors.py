@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.schemas.common import AuthorDetailResponse, AuthorsListResponse, AuthorTypeSetResponse, TaskStartedResponse
 from src.api.schemas.types import AuthorTypeRequest
 from src.database.db import get_session
 from src.services.author_service import AuthorService
@@ -20,99 +21,109 @@ from src.services.type_service import TypeService
 router = APIRouter()
 
 
-@router.get("/api/v1/authors")
-async def list_authors(session: AsyncSession = Depends(get_session)):
-    return await AuthorService(session).list_authors()
+@router.get("/api/v1/authors", response_model=AuthorsListResponse)
+async def list_authors(session: AsyncSession = Depends(get_session)) -> AuthorsListResponse:
+    result = await AuthorService(session).list_authors()
+    return AuthorsListResponse(root=result.items)
 
 
-@router.get("/api/v1/authors/{author_id}")
-async def get_author(author_id: str, session: AsyncSession = Depends(get_session)):
-    return await AuthorService(session).get_author_detail(author_id)
+@router.get("/api/v1/authors/{author_id}", response_model=AuthorDetailResponse)
+async def get_author(author_id: str, session: AsyncSession = Depends(get_session)) -> AuthorDetailResponse:
+    result = await AuthorService(session).get_author_detail(author_id)
+    return AuthorDetailResponse(
+        author=result.author,
+        latest_report=result.latest_report,
+        reports=result.reports,
+        reports_by_type=result.reports_by_type,
+        category_reports_by_type=result.category_reports_by_type,
+        author_status=result.author_status,
+    )
 
 
-@router.post("/api/v1/authors/{author_id}/generate_category_reports")
+@router.post("/api/v1/authors/{author_id}/generate_category_reports", response_model=TaskStartedResponse)
 async def generate_category_reports(
     author_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-):
+) -> TaskStartedResponse:
     # Keep existing behavior: validate author existence via service fetch.
     await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_generate_category_reports, author_id)
-    return {"status": "started", "message": "Category reports generation started"}
+    return TaskStartedResponse(status="started", message="Category reports generation started")
 
 
-@router.post("/api/v1/authors/{author_id}/set_type")
+@router.post("/api/v1/authors/{author_id}/set_type", response_model=AuthorTypeSetResponse)
 async def set_author_type(
     author_id: str,
     req: AuthorTypeRequest,
     session: AsyncSession = Depends(get_session),
-):
-    return await TypeService(session).set_author_type(author_id, req.author_type)
+) -> AuthorTypeSetResponse:
+    result = await TypeService(session).set_author_type(author_id, req.author_type)
+    return AuthorTypeSetResponse(author_id=result.author_id, author_type=result.author_type)
 
 
-@router.post("/api/v1/authors/{author_id}/regenerate_report")
+@router.post("/api/v1/authors/{author_id}/regenerate_report", response_model=TaskStartedResponse)
 async def regenerate_author_report(
     author_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-):
+) -> TaskStartedResponse:
     await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_regenerate_report, author_id)
-    return {"status": "started", "message": "Report regeneration started"}
+    return TaskStartedResponse(status="started", message="Report regeneration started")
 
 
-@router.post("/api/v1/authors/{author_id}/resummarize_all")
+@router.post("/api/v1/authors/{author_id}/resummarize_all", response_model=TaskStartedResponse)
 async def resummarize_all_videos(
     author_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     include_fallback: bool = False,
-):
+) -> TaskStartedResponse:
     await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_resummarize_author, author_id, include_fallback)
-    return {"status": "started", "message": "Batch summarization started"}
+    return TaskStartedResponse(status="started", message="Batch summarization started")
 
 
-@router.post("/api/v1/authors/{author_id}/resummarize_pending")
+@router.post("/api/v1/authors/{author_id}/resummarize_pending", response_model=TaskStartedResponse)
 async def resummarize_pending_videos(
     author_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-):
+) -> TaskStartedResponse:
     await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_resummarize_author_pending, author_id)
-    return {"status": "started", "message": "Pending summarization started"}
+    return TaskStartedResponse(status="started", message="Pending summarization started")
 
 
-@router.post("/api/v1/authors/{author_id}/compress_short_summaries")
+@router.post("/api/v1/authors/{author_id}/compress_short_summaries", response_model=TaskStartedResponse)
 async def compress_short_summaries(
     author_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-):
+) -> TaskStartedResponse:
     await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_generate_short_summaries, author_id)
-    return {"status": "started", "message": "Short summary compression started"}
+    return TaskStartedResponse(status="started", message="Short summary compression started")
 
 
-@router.post("/api/v1/authors/{author_id}/generate_categories")
+@router.post("/api/v1/authors/{author_id}/generate_categories", response_model=TaskStartedResponse)
 async def generate_author_categories(
     author_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-):
+) -> TaskStartedResponse:
     await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_generate_author_categories, author_id)
-    return {"status": "started", "message": "Category analysis started"}
+    return TaskStartedResponse(status="started", message="Category analysis started")
 
 
-@router.post("/api/v1/authors/{author_id}/reprocess_asr")
+@router.post("/api/v1/authors/{author_id}/reprocess_asr", response_model=TaskStartedResponse)
 async def reprocess_author_asr(
     author_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-):
+) -> TaskStartedResponse:
     await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_reprocess_author_asr, author_id)
-    return {"status": "started", "message": "Transcript reprocess started"}
+    return TaskStartedResponse(status="started", message="Transcript reprocess started")

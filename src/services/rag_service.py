@@ -5,6 +5,7 @@ import logging
 from fastapi import BackgroundTasks
 
 from src.database.db import get_session
+from src.domain.results import RagReindexResult
 from src.models.models import Author
 from src.rag.indexing import RagIndexingService
 from sqlmodel import select
@@ -16,12 +17,12 @@ class RagService:
     def __init__(self, background_tasks: BackgroundTasks):
         self.background_tasks = background_tasks
 
-    def start_reindex(self, author_id: str | None) -> dict[str, str]:
+    def start_reindex(self, author_id: str | None) -> RagReindexResult:
         if author_id:
             self.background_tasks.add_task(run_rag_reindex_author_task, author_id)
-            return {"status": "started", "scope": "author", "author_id": author_id}
+            return RagReindexResult(status="started", scope="author", author_id=author_id)
         self.background_tasks.add_task(run_rag_reindex_all_task)
-        return {"status": "started", "scope": "all"}
+        return RagReindexResult(status="started", scope="all", author_id=None)
 
 
 async def run_rag_reindex_author_task(author_id: str) -> None:

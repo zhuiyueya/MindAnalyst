@@ -5,13 +5,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.schemas.common import LlmCallsListResponse
 from src.database.db import get_session
 from src.services.llm_call_service import LlmCallService
 
 router = APIRouter()
 
 
-@router.get("/api/v1/llm_calls")
+@router.get("/api/v1/llm_calls", response_model=LlmCallsListResponse)
 async def list_llm_calls(
     session: AsyncSession = Depends(get_session),
     task_type: Optional[str] = None,
@@ -23,8 +24,8 @@ async def list_llm_calls(
     end_time: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-):
-    return await LlmCallService(session).list_llm_calls(
+) -> LlmCallsListResponse:
+    result = await LlmCallService(session).list_llm_calls(
         task_type=task_type,
         content_type=content_type,
         profile_key=profile_key,
@@ -35,3 +36,5 @@ async def list_llm_calls(
         limit=limit,
         offset=offset,
     )
+
+    return LlmCallsListResponse(items=result.items, total=result.total, limit=result.limit, offset=result.offset)

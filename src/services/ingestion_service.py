@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 
 from fastapi import BackgroundTasks
@@ -10,17 +11,23 @@ from src.workflows.ingestion import IngestionWorkflow
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class IngestStartResult:
+    status: str
+    message: str
+
+
 class IngestionService:
     def __init__(self, background_tasks: BackgroundTasks):
         self.background_tasks = background_tasks
 
-    def start_ingest(self, author_id: str, limit: int, use_browser: bool) -> dict[str, str]:
+    def start_ingest(self, author_id: str, limit: int, use_browser: bool) -> IngestStartResult:
         normalized = author_id
         if "bilibili.com" not in normalized and "http" not in normalized:
             normalized = f"https://space.bilibili.com/{normalized}"
 
         self.background_tasks.add_task(run_ingestion_task, normalized, limit, use_browser)
-        return {"status": "started", "message": f"Ingestion started for {normalized}"}
+        return IngestStartResult(status="started", message=f"Ingestion started for {normalized}")
 
 
 async def run_ingestion_task(mid_or_url: str, limit: int, use_browser: bool) -> None:

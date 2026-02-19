@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.utils import compute_status_fields
+from src.domain.results import AuthorDetailResult, AuthorsListResult
 from src.models.models import AuthorReport
 from src.repositories.author_repo import AuthorRepository
 from src.repositories.content_repo import ContentRepository
@@ -23,7 +24,7 @@ class AuthorService:
         self.summaries = SummaryRepository(session)
         self.reports = AuthorReportRepository(session)
 
-    async def list_authors(self) -> list[dict[str, Any]]:
+    async def list_authors(self) -> AuthorsListResult:
         authors = await self.authors.list_all()
         authors_data: list[dict[str, Any]] = []
 
@@ -52,9 +53,9 @@ class AuthorService:
             }
             authors_data.append(author_data)
 
-        return authors_data
+        return AuthorsListResult(items=authors_data)
 
-    async def get_author_detail(self, author_id: str) -> dict[str, Any]:
+    async def get_author_detail(self, author_id: str) -> AuthorDetailResult:
         author = await self.authors.get(author_id)
         if not author:
             raise HTTPException(status_code=404, detail="Author not found")
@@ -104,11 +105,11 @@ class AuthorService:
             "content_quality_counts": quality_counts,
         }
 
-        return {
-            "author": author,
-            "latest_report": latest_report,
-            "reports": reports_data,
-            "reports_by_type": reports_by_type,
-            "category_reports_by_type": category_reports_by_type,
-            "author_status": author_status,
-        }
+        return AuthorDetailResult(
+            author=author.model_dump(),
+            latest_report=latest_report,
+            reports=reports_data,
+            reports_by_type=reports_by_type,
+            category_reports_by_type=category_reports_by_type,
+            author_status=author_status,
+        )

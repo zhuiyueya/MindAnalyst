@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.utils import compute_status_fields
 from src.adapters.storage.service import StorageService
+from src.domain.results import PlaybackUrlResult, VideoDetailResult, VideosListResult
 from src.repositories.content_repo import ContentRepository
 from src.repositories.segment_repo import SegmentRepository
 from src.repositories.summary_repo import SummaryRepository
@@ -19,7 +20,7 @@ class VideoService:
         self.segments = SegmentRepository(session)
         self.summaries = SummaryRepository(session)
 
-    async def list_author_videos(self, author_id: str) -> list[dict[str, Any]]:
+    async def list_author_videos(self, author_id: str) -> VideosListResult:
         videos = await self.contents.list_by_author_ordered(author_id)
         video_ids = [str(v.id) for v in videos]
         latest_summary_by_content = await self.summaries.list_latest_by_contents(video_ids)
@@ -38,9 +39,9 @@ class VideoService:
             v_dict.update(compute_status_fields(v.content_quality, has_segments, has_summary))
             video_list.append(v_dict)
 
-        return video_list
+        return VideosListResult(items=video_list)
 
-    async def get_video_detail(self, video_id: str) -> dict[str, Any]:
+    async def get_video_detail(self, video_id: str) -> VideoDetailResult:
         video = await self.contents.get_by_id_or_external_id(video_id)
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
@@ -54,13 +55,13 @@ class VideoService:
         video_data = video.model_dump()
         video_data.update(compute_status_fields(video.content_quality, has_segments, has_summary))
 
-        return {
-            "video": video_data,
-            "summary": summary.model_dump() if summary else None,
-            "segments": [s.model_dump(exclude={"embedding"}) for s in segments],
-        }
+        return VideoDetailResult(
+            video=video_data,
+            summary=summary.model_dump() if summary else None,
+            segments=[s.model_dump(exclude={"embedding"}) for s in segments],
+        )
 
-    async def get_playback_url(self, video_id: str) -> dict[str, str]:
+    async def get_playback_url(self, video_id: str) -> PlaybackUrlResult:
         video = await self.contents.get_by_id_or_external_id(video_id)
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
@@ -79,4 +80,4 @@ class VideoService:
             raise HTTPException(status_code=404, detail="Media file not found in storage")
 
         url = storage.get_file_url(target_obj)
-        return {"url": url}
+        return PlaybackUrlResult(url=url)

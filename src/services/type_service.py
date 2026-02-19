@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.domain.results import AuthorTypeSetResult, VideoTypeSetResult
 from src.models.models import Author, ContentItem
 from src.repositories.content_repo import ContentRepository
 
@@ -12,7 +13,7 @@ class TypeService:
         self.session = session
         self.contents = ContentRepository(session)
 
-    async def set_author_type(self, author_id: str, author_type_raw: str | None) -> dict[str, str | None]:
+    async def set_author_type(self, author_id: str, author_type_raw: str | None) -> AuthorTypeSetResult:
         author = await self.session.get(Author, author_id)
         if not author:
             raise HTTPException(status_code=404, detail="Author not found")
@@ -33,9 +34,9 @@ class TypeService:
             self.session.add(content)
 
         await self.session.commit()
-        return {"author_id": author_id, "author_type": author.author_type}
+        return AuthorTypeSetResult(author_id=author_id, author_type=author.author_type)
 
-    async def set_video_type(self, video_id: str, content_type_raw: str | None) -> dict[str, object]:
+    async def set_video_type(self, video_id: str, content_type_raw: str | None) -> VideoTypeSetResult:
         video = await self.contents.get_by_id_or_external_id(video_id)
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
@@ -54,4 +55,4 @@ class TypeService:
         self.session.add(video)
         await self.session.commit()
         await self.session.refresh(video)
-        return {"video": video.model_dump()}
+        return VideoTypeSetResult(video=video.model_dump())
