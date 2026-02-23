@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.results import ChatResult
@@ -12,5 +14,6 @@ class ChatService:
 
     async def chat(self, query: str, author_id: str | None) -> ChatResult:
         engine = RAGEngine(self.session)
-        data = await engine.chat(query, author_id=author_id)
-        return ChatResult(answer=str(data.get("answer") or ""), citations=list(data.get("citations") or []))
+        resp = await engine.chat(query, author_id=author_id)
+        citations = [asdict(c) for c in resp.citations]
+        return ChatResult(answer=resp.answer, citations=citations)

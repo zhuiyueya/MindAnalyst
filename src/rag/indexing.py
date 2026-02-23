@@ -1,14 +1,11 @@
-import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
-
-from sentence_transformers import SentenceTransformer
-from sqlalchemy import delete
+from typing import Any, Dict, List, Tuple, cast
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
+from src.adapters.embedding.provider import embed_text
 from src.models.models import ContentItem, RagIndexItem, Summary
+from src.repositories.rag_index_repo import RagIndexRepository
 
 logger = logging.getLogger(__name__)
 
@@ -47,27 +44,10 @@ def _split_by_tags(text: str) -> List[Tuple[str, str]]:
 class RagIndexingService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        try:
-            self.embedder = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-        except Exception as e:
-            logger.warning("Failed to load embedder: %s", e)
-            self.embedder = None
-
-    def _embed(self, text: str) -> List[float]:
-        if self.embedder:
-            return self.embedder.encode(text).tolist()
-        return [0.0] * 384
+        self.repo = RagIndexRepository(session)
 
     async def reindex_author(self, author_id: str) -> Dict[str, Any]:
-        stmt = (
-            select(Summary, ContentItem)
-            .join(ContentItem, Summary.content_id == ContentItem.id)
-            .where(ContentItem.author_id == author_id)
-            .where(Summary.summary_type == "structured")
-            .order_by(Summary.created_at.desc())
-        )
-        result = await self.session.execute(stmt)
-        rows = result.all()
+        rows = await self.repo.list_latest_structured_summaries_by_author(author_id)
         if not rows:
             return {"author_id": author_id, "indexed": 0, "skipped": 0, "error": "no_summaries"}
 
@@ -88,8 +68,7 @@ class RagIndexingService:
         return {"author_id": author_id, "indexed": indexed, "skipped": skipped, "latest_summary_count": len(latest_by_content)}
 
     async def _delete_existing_for_summary(self, summary_id: str) -> None:
-        await self.session.execute(delete(RagIndexItem).where(RagIndexItem.summary_id == summary_id))
-        await self.session.commit()
+        await self.repo.delete_by_summary_id(summary_id)
 
     async def _index_one_summary(self, summary: Summary, content: ContentItem) -> Tuple[int, int]:
         indexed = 0
@@ -109,13 +88,14 @@ class RagIndexingService:
         chunks = _split_by_tags(summary.content or "")
         if not chunks:
             logger.info("RAG chunk split empty: summary_id=%s", summary.id)
+        items: List[RagIndexItem] = []
         for chunk_index, (tag, body) in enumerate(chunks, start=1):
             text_raw = _clean_markdown_noise(body)
             if not text_raw:
                 skipped += 1
                 continue
             text_for_embedding = f"领域: {category}  | 内容: {text_raw}"
-            emb = self._embed(text_for_embedding)
+            emb = embed_text(text_for_embedding)
             item = RagIndexItem(
                 source_type="summary_chunk",
                 author_id=content.author_id,
@@ -126,9 +106,10 @@ class RagIndexingService:
                 video_category=category,
                 text_raw=text_raw,
                 text_for_embedding=text_for_embedding,
+                tsv=text_raw,
                 embedding=emb,
             )
-            self.session.add(item)
+            items.append(item)
             indexed += 1
 
         # 2) short_json
@@ -136,15 +117,16 @@ class RagIndexingService:
         is_trash = bool(sj.get("is_trash"))
         short_summary = (sj.get("summary") or "").strip()
         if (not is_trash) and short_summary:
-            keywords = sj.get("keywords") or []
-            if isinstance(keywords, list):
-                keywords_str = ",".join([str(x) for x in keywords if str(x).strip()])
+            keywords_value: Any = sj.get("keywords")
+            if isinstance(keywords_value, list):
+                keywords_list = cast(List[Any], keywords_value)
+                keywords_str = ",".join([str(x) for x in keywords_list if str(x).strip()])
             else:
-                keywords_str = str(keywords)
+                keywords_str = str(keywords_value or "")
 
             text_raw = (short_summary + (f"\n关键词: {keywords_str}" if keywords_str else "")).strip()
             text_for_embedding = text_raw
-            emb = self._embed(text_for_embedding)
+            emb = embed_text(text_for_embedding)
             item = RagIndexItem(
                 source_type="summary_short",
                 author_id=content.author_id,
@@ -155,9 +137,10 @@ class RagIndexingService:
                 video_category=category,
                 text_raw=text_raw,
                 text_for_embedding=text_for_embedding,
+                tsv=text_raw,
                 embedding=emb,
             )
-            self.session.add(item)
+            items.append(item)
             indexed += 1
         else:
             skipped += 1
@@ -169,5 +152,5 @@ class RagIndexingService:
             skipped,
         )
 
-        await self.session.commit()
+        await self.repo.add_items(items)
         return indexed, skipped

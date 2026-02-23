@@ -10,7 +10,9 @@ class AuthorReportRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def list_by_author_desc(self, author_id: str) -> list[AuthorReport]:
+    async def list_by_author_desc(self, author_id: str, *, limit: int | None = None) -> list[AuthorReport]:
         stmt = select(AuthorReport).where(AuthorReport.author_id == author_id).order_by(AuthorReport.created_at.desc())  # type: ignore[reportUnknownMemberType]
+        if isinstance(limit, int) and limit > 0:
+            stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
