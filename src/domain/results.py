@@ -66,3 +66,9 @@ class VideoDetailResult:
     video: dict[str, Any]
     summary: dict[str, Any] | None
     segments: list[dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatResult:
+    answer: str
+    citations: list[dict[str, Any]]

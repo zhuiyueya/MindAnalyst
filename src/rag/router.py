@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional, cast
 
 from src.adapters.llm.service import LLMService
 
@@ -11,7 +11,7 @@ class RagRouter:
     def __init__(self):
         self.llm = LLMService()
 
-    async def route(self, query: str, author_id: Optional[str] = None) -> Dict[str, Any]:
+    async def route(self, query: str, author_id: Optional[str] = None) -> dict[str, Any]:
         """Return routing decision.
 
         Output schema:
@@ -56,21 +56,30 @@ class RagRouter:
                 return {"route": "summary_chunk", "tags": ["观点", "金句"], "query": normalized}
 
         try:
-            data = await self.llm.classify_rag_intent(query=query, prompt=prompt)
+            raw: Any = await self.llm.classify_rag_intent(query=query, prompt=prompt)
         except Exception as e:
             logger.warning("RAG router failed, fallback to summary_chunk: %s", e)
+            raw = {"route": "summary_chunk", "tags": [], "query": query}
+
+        if isinstance(raw, dict):
+            data: dict[str, Any] = cast(dict[str, Any], raw)
+        else:
             data = {"route": "summary_chunk", "tags": [], "query": query}
 
-        route = data.get("route") if isinstance(data, dict) else None
+        route_raw = data.get("route")
+        route = route_raw if isinstance(route_raw, str) and route_raw else None
         if route == "author_report" and not author_id:
             route = "summary_chunk"
 
-        tags = data.get("tags") if isinstance(data, dict) else []
-        if not isinstance(tags, list):
-            tags = []
-        tags = [str(x).strip() for x in tags if str(x).strip()]
+        tags_raw = data.get("tags")
+        tags: list[str] = []
+        if isinstance(tags_raw, list):
+            for x in cast(list[Any], tags_raw):
+                sx = str(x).strip()
+                if sx:
+                    tags.append(sx)
 
-        q = data.get("query") if isinstance(data, dict) else None
-        q = q.strip() if isinstance(q, str) and q.strip() else query
+        q_raw = data.get("query")
+        q = q_raw.strip() if isinstance(q_raw, str) and q_raw.strip() else query
 
         return {"route": route or "summary_chunk", "tags": tags, "query": q}

@@ -1,10 +1,9 @@
-
 import logging
 import json
 import re
 import ast
 import os
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, cast
 from openai import AsyncOpenAI
 from src.core.config import settings
 from src.prompts.manager import PromptManager
@@ -146,7 +145,7 @@ class LLMService:
             cleaned = re.sub(r",\s*([}\]])", r"\1", candidate)
             try:
                 parsed = json.loads(cleaned)
-                return parsed if isinstance(parsed, dict) else {"raw": parsed}
+                return cast(Dict[str, Any], parsed) if isinstance(parsed, dict) else {"raw": parsed}
             except Exception as exc:
                 last_error = exc
 
@@ -154,14 +153,14 @@ class LLMService:
             if normalized != cleaned:
                 try:
                     parsed = json.loads(normalized)
-                    return parsed if isinstance(parsed, dict) else {"raw": parsed}
+                    return cast(Dict[str, Any], parsed) if isinstance(parsed, dict) else {"raw": parsed}
                 except Exception as exc:
                     last_error = exc
 
             try:
                 parsed = ast.literal_eval(normalized)
                 if isinstance(parsed, dict):
-                    return parsed
+                    return cast(Dict[str, Any], parsed)
                 if isinstance(parsed, list):
                     return {"raw": parsed}
             except Exception as inner_exc:

@@ -12,4 +12,5 @@ router = APIRouter()
 
 @router.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest, session: AsyncSession = Depends(get_session)) -> ChatResponse:
-    return await ChatService(session).chat(req.query, req.author_id)
+    result = await ChatService(session).chat(req.query, req.author_id)
+    return ChatResponse(answer=result.answer, citations=result.citations)

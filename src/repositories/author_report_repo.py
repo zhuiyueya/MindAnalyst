@@ -11,6 +11,6 @@ class AuthorReportRepository:
         self.session = session
 
     async def list_by_author_desc(self, author_id: str) -> list[AuthorReport]:
-        stmt = select(AuthorReport).where(AuthorReport.author_id == author_id).order_by(AuthorReport.created_at.desc())
+        stmt = select(AuthorReport).where(AuthorReport.author_id == author_id).order_by(AuthorReport.created_at.desc())  # type: ignore[reportUnknownMemberType]
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

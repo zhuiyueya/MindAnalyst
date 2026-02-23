@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -94,19 +94,30 @@ class RAGEngine:
 
         return "\n\n".join(context_parts).strip(), citations
 
-    async def chat(self, query: str, author_id: str = None) -> Dict:
+    async def chat(self, query: str, author_id: Optional[str] = None) -> dict[str, Any]:
         """RAG Chat"""
         route_decision = await self.router.route(query, author_id=author_id)
-        route = route_decision.get("route")
-        tags = route_decision.get("tags") or []
-        routed_query = route_decision.get("query") or query
+        route_raw = route_decision.get("route")
+        route: Optional[str] = route_raw if isinstance(route_raw, str) and route_raw else None
+
+        tags_raw = route_decision.get("tags")
+        if isinstance(tags_raw, list):
+            tags: list[str] = []
+            for t in cast(list[Any], tags_raw):
+                if isinstance(t, str) and t:
+                    tags.append(t)
+        else:
+            tags = []
+
+        routed_query_raw = route_decision.get("query")
+        routed_query: str = routed_query_raw if isinstance(routed_query_raw, str) and routed_query_raw else query
 
         if route == "author_report" and author_id:
             reports = await self._load_author_reports(author_id, limit=10)
             if not reports:
                 return {"answer": "未找到相关作者报告。", "citations": []}
 
-            context_parts = []
+            context_parts: List[str] = []
             citations: List[Dict[str, Any]] = []
             for idx, rep in enumerate(reports, start=1):
                 context_parts.append(f"[R{idx}] report_type={rep.report_type} version={rep.report_version}\n{rep.content}")

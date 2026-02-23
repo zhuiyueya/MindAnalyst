@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.utils import compute_status_fields
 from src.domain.results import AuthorDetailResult, AuthorsListResult
-from src.models.models import AuthorReport
 from src.repositories.author_repo import AuthorRepository
 from src.repositories.content_repo import ContentRepository
 from src.repositories.segment_repo import SegmentRepository
@@ -75,13 +74,12 @@ class AuthorService:
             if report.get("report_type") != "report.author.category":
                 continue
             key = report.get("content_type") or "generic"
-            category = None
             json_data = report.get("json_data")
             if isinstance(json_data, dict):
-                category = json_data.get("category")
-            if not category:
-                continue
-            category_reports_by_type.setdefault(str(key), {})[str(category)] = report
+                json_data_dict = cast(dict[str, Any], json_data)
+                category_value = json_data_dict.get("category")
+                if isinstance(category_value, str) and category_value:
+                    category_reports_by_type.setdefault(str(key), {})[category_value] = report
 
         contents = await self.contents.list_by_author(author_id)
 
@@ -98,7 +96,7 @@ class AuthorService:
             summary_counts[str(status_fields["summary_status"])] += 1
             quality_counts[content.content_quality] = quality_counts.get(content.content_quality, 0) + 1
 
-        author_status = {
+        author_status: dict[str, Any] = {
             "total_videos": len(contents),
             "asr_status_counts": asr_counts,
             "summary_status_counts": summary_counts,
