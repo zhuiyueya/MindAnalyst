@@ -46,8 +46,6 @@ async def generate_category_reports(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> TaskStartedResponse:
-    # Keep existing behavior: validate author existence via service fetch.
-    await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_generate_category_reports, author_id)
     return TaskStartedResponse(status="started", message="Category reports generation started")
 
@@ -68,7 +66,6 @@ async def regenerate_author_report(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> TaskStartedResponse:
-    await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_regenerate_report, author_id)
     return TaskStartedResponse(status="started", message="Report regeneration started")
 
@@ -80,7 +77,6 @@ async def resummarize_all_videos(
     session: AsyncSession = Depends(get_session),
     include_fallback: bool = False,
 ) -> TaskStartedResponse:
-    await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_resummarize_author, author_id, include_fallback)
     return TaskStartedResponse(status="started", message="Batch summarization started")
 
@@ -91,7 +87,6 @@ async def resummarize_pending_videos(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> TaskStartedResponse:
-    await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_resummarize_author_pending, author_id)
     return TaskStartedResponse(status="started", message="Pending summarization started")
 
@@ -102,7 +97,6 @@ async def compress_short_summaries(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> TaskStartedResponse:
-    await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_generate_short_summaries, author_id)
     return TaskStartedResponse(status="started", message="Short summary compression started")
 
@@ -113,7 +107,6 @@ async def generate_author_categories(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> TaskStartedResponse:
-    await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_generate_author_categories, author_id)
     return TaskStartedResponse(status="started", message="Category analysis started")
 
@@ -124,6 +117,5 @@ async def reprocess_author_asr(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> TaskStartedResponse:
-    await AuthorService(session).get_author_detail(author_id)
     background_tasks.add_task(run_reprocess_author_asr, author_id)
     return TaskStartedResponse(status="started", message="Transcript reprocess started")

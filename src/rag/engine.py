@@ -91,7 +91,8 @@ class RAGEngine:
             return RagChatResponse(answer=answer, citations=citations)
 
         source_type = "summary_short" if route == "summary_short" else "summary_chunk"
-        items = await self.retrieve(routed_query, author_id=author_id, source_type=source_type, tags=tags, top_k=10)
+        retrieval_tags = [] if source_type == "summary_short" else tags
+        items = await self.retrieve(routed_query, author_id=author_id, source_type=source_type, tags=retrieval_tags, top_k=10)
 
         if not items:
             return RagChatResponse(answer="未找到相关内容。", citations=[])

@@ -35,7 +35,7 @@ class RagIndexRepository:
         )
         result = await self.session.execute(stmt)
         rows = result.tuples().all()
-        return [row[0] for row in rows]
+        return list(rows)
 
     async def hybrid_search(
         self,
@@ -73,9 +73,6 @@ class RagIndexRepository:
         sparse_stmt = sparse_stmt.order_by(desc(func.ts_rank(col(RagIndexItem.tsv), tsquery))).limit(max(limit, sparse_limit))
         sparse_res = await self.session.execute(sparse_stmt)
         sparse_items = list(sparse_res.scalars().all())
-
-        if source_type == "summary_short" and not sparse_items:
-            return []
 
         merged: list[RagIndexItem] = []
         seen: set[str] = set()

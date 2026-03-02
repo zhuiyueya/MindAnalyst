@@ -47,12 +47,20 @@ class BrowserCrawler:
         """启动一个新的浏览器实例"""
         try:
             self.playwright = await async_playwright().start()
-            # 直接启动新的浏览器实例，而不是连接现有 CDP
-            # 以避免本地 Chrome 状态可能造成的异常
-            self.browser = await self.playwright.chromium.launch(
-                headless=self.headless,
-                args=["--no-sandbox", "--disable-blink-features=AutomationControlled"]
-            )
+            # 优先使用系统已安装的 Chrome（通常比 Playwright 缓存的 CFT/Chromium 更稳定）
+            try:
+                self.browser = await self.playwright.chromium.launch(
+                    channel="chrome",
+                    headless=self.headless,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+            except Exception as e:
+                logger.warning(f"Failed to launch system Chrome, falling back to bundled chromium: {e}")
+                # 直接启动 Playwright 管理的 Chromium
+                self.browser = await self.playwright.chromium.launch(
+                    headless=self.headless,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
             logger.info(f"Launched new browser (headless={self.headless})")
         except Exception as e:
             logger.error(f"Failed to launch browser: {e}")
@@ -267,71 +275,92 @@ class BrowserCrawler:
         返回：ScrapePageResult(author=..., videos=[...])
         """
 
-        page = await self._new_page()
-        author: Optional[AuthorInfo] = None
-        videos: List[VideoInfo] = []
+        async def _scrape_once() -> ScrapePageResult:
+            page = await self._new_page()
+            author: Optional[AuthorInfo] = None
+            videos: List[VideoInfo] = []
 
-        try:
-            normalized_url = self._normalize_url(url)
-            await self._initial_load(page, normalized_url)
+            try:
+                normalized_url = self._normalize_url(url)
+                await self._initial_load(page, normalized_url)
 
-            author = await self._extract_author(page, normalized_url)
+                author = await self._extract_author(page, normalized_url)
 
-            # 初次滚动
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(2)
+                # 初次滚动
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await asyncio.sleep(2)
 
-            # 2. 提取视频（分页循环）
-            seen: set[str] = set()
-            page_num = 1
+                # 2. 提取视频（分页循环）
+                seen: set[str] = set()
+                page_num = 1
 
-            while True:
-                logger.info(f"Scraping page {page_num}...")
+                while True:
+                    logger.info(f"Scraping page {page_num}...")
 
-                # 滚动触发懒加载（ 3 次，每次 1 秒）
-                await self._scroll_to_bottom(page, times=3, sleep_s=1)
+                    # 滚动触发懒加载（ 3 次，每次 1 秒）
+                    await self._scroll_to_bottom(page, times=3, sleep_s=1)
 
-                video_items = await self._select_video_items(page)
+                    video_items = await self._select_video_items(page)
 
-                current_page_new_count = 0
-                for el in video_items:
+                    current_page_new_count = 0
+                    for el in video_items:
+                        if limit > 0 and len(videos) >= limit:
+                            break
+
+                        video = await self._parse_video_item(page, el)
+                        if not video:
+                            continue
+
+                        if video.bvid in seen:
+                            continue
+
+                        seen.add(video.bvid)
+                        videos.append(video)
+                        current_page_new_count += 1
+
+                    logger.info(
+                        f"Page {page_num}: Found {current_page_new_count} new videos. Total: {len(videos)}"
+                    )
+
                     if limit > 0 and len(videos) >= limit:
+                        logger.info(f"Reached limit {limit}. Stopping.")
                         break
 
-                    video = await self._parse_video_item(page, el)
-                    if not video:
-                        continue
+                    next_btn = await self._find_next_button(page)
+                    if next_btn:
+                        logger.info("Navigating to next page...")
+                        await next_btn.click()
+                        page_num += 1
+                        await asyncio.sleep(5)  # 等待加载
+                    else:
+                        logger.info("No next page or reached end.")
+                        break
 
-                    if video.bvid in seen:
-                        continue
+                logger.info(f"Found {len(videos)} videos on page.")
+                return ScrapePageResult(author=author, videos=videos)
+            except Exception as e:
+                logger.error(f"Error scraping page: {e}")
+                return ScrapePageResult(author=author, videos=videos)
+            finally:
+                await page.close()
 
-                    seen.add(video.bvid)
-                    videos.append(video)
-                    current_page_new_count += 1
-
-                logger.info(f"Page {page_num}: Found {current_page_new_count} new videos. Total: {len(videos)}")
-
-                if limit > 0 and len(videos) >= limit:
-                    logger.info(f"Reached limit {limit}. Stopping.")
-                    break
-
-                next_btn = await self._find_next_button(page)
-                if next_btn:
-                    logger.info("Navigating to next page...")
-                    await next_btn.click()
-                    page_num += 1
-                    await asyncio.sleep(5)  # 等待加载
-                else:
-                    logger.info("No next page or reached end.")
-                    break
-
-            logger.info(f"Found {len(videos)} videos on page.")
+        try:
+            return await _scrape_once()
         except Exception as e:
-            logger.error(f"Error scraping page: {e}")
-        finally:
-            await page.close()
+            msg = str(e)
+            if "Target crashed" not in msg and "has been closed" not in msg:
+                raise
 
-        return ScrapePageResult(author=author, videos=videos)
+            logger.warning(f"Browser/page crashed, restarting browser and retrying once: {e}")
+            try:
+                await self.close()
+            except Exception:
+                pass
+
+            self.browser = None
+            self.playwright = None
+            await self.connect()
+            return await _scrape_once()
 
     async def close(self):
         if self.browser:

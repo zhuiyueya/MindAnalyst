@@ -79,7 +79,9 @@ class AuthorService:
                 json_data_dict = cast(dict[str, Any], json_data)
                 category_value = json_data_dict.get("category")
                 if isinstance(category_value, str) and category_value:
-                    category_reports_by_type.setdefault(str(key), {})[category_value] = report
+                    bucket = category_reports_by_type.setdefault(str(key), {})
+                    if category_value not in bucket:
+                        bucket[category_value] = report
 
         contents = await self.contents.list_by_author(author_id)
 

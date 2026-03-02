@@ -3,50 +3,24 @@ import logging
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
-from src.models.models import ContentItem, Segment, Summary, AuthorReport, Author
+
 from src.adapters.llm.service import LLMService
-from src.database.db import get_session
 from src.core.config import settings
-from src.services.analysis.author_category_service import AuthorCategoryService
-from src.services.analysis.author_report_service import AuthorReportService
-from src.services.analysis.author_summary_service import AuthorSummaryService
+from src.models.models import Author, AuthorReport, ContentItem, Segment, Summary
+from src.repositories.segment_repo import SegmentRepository
+from src.repositories.summary_repo import SummaryRepository
 
 logger = logging.getLogger(__name__)
 
-class AnalysisWorkflow:
+
+class AuthorReportService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.llm = LLMService()
-
-    async def _resolve_author(self, content: ContentItem) -> Optional[Author]:
-        if not content.author_id:
-            return None
-        return await self.session.get(Author, content.author_id)
-
-    async def _resolve_content_type(self, content: ContentItem, full_text: str) -> str:
-        author = await self._resolve_author(content)
-        if author and author.author_type:
-            if content.content_type != author.author_type or content.content_type_source != "author_inherit":
-                content.content_type = author.author_type
-                content.content_type_source = "author_inherit"
-                self.session.add(content)
-                await self.session.commit()
-            return author.author_type
-
-        if content.content_type:
-            return content.content_type
-
-        classified = await self.llm.classify_content_type(full_text)
-        if classified:
-            content.content_type = classified
-            content.content_type_source = "classifier"
-            self.session.add(content)
-            await self.session.commit()
-            return classified
-
-        return "generic"
+        self.summaries = SummaryRepository(session)
+        self.segments = SegmentRepository(session)
 
     def _extract_report_version(self, profile_key: Optional[str]) -> str:
         if not profile_key:
@@ -432,21 +406,255 @@ class AnalysisWorkflow:
 
         return "# 作者实战指南\n\n" + "\n\n".join(sections)
 
-    async def generate_content_summary(self, content: ContentItem, segments: List[Segment], existing_summary: Summary = None):
-        return await AuthorSummaryService(self.session).generate_content_summary(
-            content,
-            segments,
-            existing_summary=existing_summary,
-        )
-
     async def generate_author_report(self, author_id: str):
-        return await AuthorReportService(self.session).generate_author_report(author_id)
+        """
+        Generate author-level report from existing summaries.
+        """
+        logger.info(f"Generating report for author {author_id}...")
+        author = await self.session.get(Author, author_id)
+        if not author:
+            logger.warning("Author not found for report generation.")
+            return
+
+        rows = await self.summaries.list_with_content_type_by_author_desc(author_id)
+
+        if not rows:
+            logger.warning("No summaries found for author report.")
+            return
+
+        content_ids = [summary.content_id for summary, _ in rows if summary.content_id]
+        segments_by_content: Dict[str, List[Segment]] = await self.segments.list_for_contents_grouped(content_ids)
+
+        grouped: Dict[str, List[Summary]] = {}
+        for summary, content_type in rows:
+            key = content_type or "generic"
+            grouped.setdefault(key, []).append(summary)
+
+        if author.author_type:
+            grouped = {author.author_type: [summary for summary, _ in rows]}
+
+        for content_type, summaries in grouped.items():
+            full_context_parts: List[str] = []
+            for idx, summary in enumerate(summaries, start=1):
+                segs = segments_by_content.get(summary.content_id) or []
+                if not segs:
+                    continue
+                text = "\n".join([s.text for s in segs if s.text]).strip()
+                if text:
+                    full_context_parts.append(f"视频{idx}全文:\n{text}")
+            context_override = "\n\n".join(full_context_parts) if full_context_parts else None
+
+            summary_data = [s.json_data for s in summaries if s.json_data]
+            if not summary_data:
+                continue
+
+            result = await self.llm.generate_author_report(
+                summary_data,
+                content_type,
+                context_override=context_override
+            )
+            if "error" in result:
+                logger.warning(f"Report generation failed: {result['error']}")
+                continue
+
+            raw = result.get("raw") if isinstance(result, dict) else None
+            if isinstance(raw, dict):
+                report_content = json.dumps(raw, ensure_ascii=False, indent=2)
+            elif raw is not None:
+                report_content = json.dumps(raw, ensure_ascii=False)
+            else:
+                report_content = ""
+            report = AuthorReport(
+                author_id=author_id,
+                content_type=content_type,
+                report_type="report.author",
+                report_version=self._extract_report_version(result.get("profile") if isinstance(result, dict) else None),
+                content=report_content,
+                json_data=result if isinstance(result, dict) else {"raw": raw}
+            )
+            self.session.add(report)
+
+        await self.session.commit()
+        logger.info(f"Saved author reports for {author_id}")
 
     async def generate_category_reports_for_author(self, author_id: str) -> Dict[str, Any]:
-        return await AuthorReportService(self.session).generate_category_reports_for_author(author_id)
+        logger.info("Generating category reports for author %s", author_id)
+        author = await self.session.get(Author, author_id)
+        if not author:
+            logger.warning("Category reports early return: author_not_found author_id=%s", author_id)
+            return {"error": "author_not_found"}
 
-    async def generate_short_summaries_for_author(self, author_id: str) -> Dict[str, Any]:
-        return await AuthorSummaryService(self.session).generate_short_summaries_for_author(author_id)
+        content_type = author.author_type or "generic"
+        categories = [str(x) for x in (author.category_list or []) if str(x).strip()]
+        if not categories:
+            logger.warning(
+                "Category reports early return: category_list_empty author_id=%s content_type=%s",
+                author_id,
+                content_type,
+            )
+            return {"error": "category_list_empty"}
 
-    async def generate_author_categories_and_tag(self, author_id: str) -> Dict[str, Any]:
-        return await AuthorCategoryService(self.session).generate_author_categories_and_tag(author_id)
+        logger.info(
+            "Category reports preflight: author_id=%s content_type=%s categories=%s",
+            author_id,
+            content_type,
+            len(categories),
+        )
+
+        rows = await self.summaries.list_structured_with_content_by_author_desc(author_id)
+        if not rows:
+            logger.warning(
+                "Category reports early return: no_summaries author_id=%s content_type=%s",
+                author_id,
+                content_type,
+            )
+            return {"error": "no_summaries"}
+
+        logger.info(
+            "Category reports fetched summaries: author_id=%s row_count=%s",
+            author_id,
+            len(rows),
+        )
+
+        latest_by_content: Dict[str, tuple[Summary, ContentItem]] = {}
+        for summary, content in rows:
+            if summary.content_id and summary.content_id not in latest_by_content:
+                latest_by_content[summary.content_id] = (summary, content)
+
+        logger.info(
+            "Category reports latest summaries: author_id=%s latest_by_content=%s",
+            author_id,
+            len(latest_by_content),
+        )
+
+        summaries_by_category: Dict[str, List[tuple[Summary, ContentItem]]] = {c: [] for c in categories}
+        for summary, content in latest_by_content.values():
+            cat = (summary.video_category or "").strip() if summary.video_category else ""
+            if not cat:
+                continue
+            if cat not in summaries_by_category:
+                continue
+            if not summary.content:
+                continue
+            summaries_by_category[cat].append((summary, content))
+
+        logger.info(
+            "Category reports grouped: author_id=%s category_nonempty=%s/%s",
+            author_id,
+            sum(1 for c in categories if summaries_by_category.get(c)),
+            len(categories),
+        )
+
+        generated = 0
+        skipped = 0
+        for idx_category, category in enumerate(categories, start=1):
+            items = summaries_by_category.get(category) or []
+            if not items:
+                skipped += 1
+                logger.info(
+                    "Category report batch skipped (no items): author_id=%s category=%s batch=%s/%s",
+                    author_id,
+                    category,
+                    idx_category,
+                    len(categories),
+                )
+                continue
+
+            logger.info(
+                "Category report batch start: author_id=%s category=%s batch=%s/%s video_count=%s",
+                author_id,
+                category,
+                idx_category,
+                len(categories),
+                len(items),
+            )
+
+            context_parts: List[str] = []
+            for idx, (summary, content) in enumerate(items, start=1):
+                title = (content.title or "").strip()
+                header = f"视频{idx}: {title}" if title else f"视频{idx}"
+                context_parts.append(f"{header}\n{summary.content}")
+            context_override = "\n\n".join([x for x in context_parts if x]).strip()
+            if not context_override:
+                skipped += 1
+                logger.info(
+                    "Category report batch skipped (empty context): author_id=%s category=%s batch=%s/%s video_count=%s",
+                    author_id,
+                    category,
+                    idx_category,
+                    len(categories),
+                    len(items),
+                )
+                continue
+
+            started_at = time.monotonic()
+            try:
+                result = await self.llm.generate_author_report([], content_type, context_override=context_override)
+            except Exception as exc:
+                skipped += 1
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                logger.error(
+                    "Category report batch failed: author_id=%s category=%s batch=%s/%s video_count=%s elapsed_ms=%s error=%s",
+                    author_id,
+                    category,
+                    idx_category,
+                    len(categories),
+                    len(items),
+                    elapsed_ms,
+                    exc,
+                )
+                continue
+
+            if not isinstance(result, dict) or "error" in result:
+                skipped += 1
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                logger.warning(
+                    "Category report batch returned error: author_id=%s category=%s batch=%s/%s video_count=%s elapsed_ms=%s result=%s",
+                    author_id,
+                    category,
+                    idx_category,
+                    len(categories),
+                    len(items),
+                    elapsed_ms,
+                    result,
+                )
+                continue
+
+            raw = result.get("raw") if isinstance(result, dict) else None
+            if isinstance(raw, dict):
+                report_content = json.dumps(raw, ensure_ascii=False, indent=2)
+            elif raw is not None:
+                report_content = json.dumps(raw, ensure_ascii=False)
+            else:
+                report_content = ""
+
+            report = AuthorReport(
+                author_id=author_id,
+                content_type=content_type,
+                report_type="report.author.category",
+                report_version=self._extract_report_version(result.get("profile") if isinstance(result, dict) else None),
+                content=report_content,
+                json_data={
+                    "category": category,
+                    "video_count": len(items),
+                    "llm_result": result,
+                },
+            )
+            self.session.add(report)
+            await self.session.commit()
+            generated += 1
+
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            logger.info(
+                "Category report batch saved: author_id=%s category=%s batch=%s/%s video_count=%s elapsed_ms=%s generated=%s skipped=%s",
+                author_id,
+                category,
+                idx_category,
+                len(categories),
+                len(items),
+                elapsed_ms,
+                generated,
+                skipped,
+            )
+
+        return {"generated": generated, "skipped": skipped, "categories": categories}

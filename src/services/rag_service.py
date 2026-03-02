@@ -6,9 +6,8 @@ from fastapi import BackgroundTasks
 
 from src.database.db import get_session
 from src.domain.results import RagReindexResult
-from src.models.models import Author
 from src.rag.indexing import RagIndexingService
-from sqlmodel import select
+from src.repositories.author_repo import AuthorRepository
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +40,7 @@ async def run_rag_reindex_all_task() -> None:
     logger.info("Starting RAG reindex for all authors")
     async for session in get_session():
         try:
-            stmt = select(Author)
-            res = await session.execute(stmt)
-            authors = res.scalars().all()
+            authors = await AuthorRepository(session).list_all()
             indexer = RagIndexingService(session)
             total_indexed = 0
             total_skipped = 0

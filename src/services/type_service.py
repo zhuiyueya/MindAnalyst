@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.results import AuthorTypeSetResult, VideoTypeSetResult
-from src.models.models import Author, ContentItem
+from src.repositories.author_repo import AuthorRepository
 from src.repositories.content_repo import ContentRepository
 
 
@@ -12,9 +12,10 @@ class TypeService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.contents = ContentRepository(session)
+        self.authors = AuthorRepository(session)
 
     async def set_author_type(self, author_id: str, author_type_raw: str | None) -> AuthorTypeSetResult:
-        author = await self.session.get(Author, author_id)
+        author = await self.authors.get(author_id)
         if not author:
             raise HTTPException(status_code=404, detail="Author not found")
 
@@ -42,7 +43,7 @@ class TypeService:
             raise HTTPException(status_code=404, detail="Video not found")
 
         if video.author_id:
-            author = await self.session.get(Author, video.author_id)
+            author = await self.authors.get(video.author_id)
             if author and author.author_type:
                 raise HTTPException(
                     status_code=400,

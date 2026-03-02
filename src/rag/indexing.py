@@ -106,7 +106,6 @@ class RagIndexingService:
                 video_category=category,
                 text_raw=text_raw,
                 text_for_embedding=text_for_embedding,
-                tsv=text_raw,
                 embedding=emb,
             )
             items.append(item)
@@ -137,7 +136,6 @@ class RagIndexingService:
                 video_category=category,
                 text_raw=text_raw,
                 text_for_embedding=text_for_embedding,
-                tsv=text_raw,
                 embedding=emb,
             )
             items.append(item)
