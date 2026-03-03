@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     BILIBILI_BROWSER_HEADLESS: bool = False
     BILIBILI_BROWSER_SCROLL_TIMES: int = 3
     BILIBILI_BROWSER_SCROLL_SLEEP_S: float = 1.0
+
+    ASR_PROVIDER: str = "openai_compatible"
+    ASR_API_KEY: Optional[str] = None
+    ASR_BASE_URL: Optional[str] = None
+    ASR_MODEL: str = "FunAudioLLM/SenseVoiceSmall"
+    ASR_TIMEOUT_S: int = 60
+    ASR_FFMPEG_BIN: str = "ffmpeg"
     
     class Config:
         env_file = ".env"

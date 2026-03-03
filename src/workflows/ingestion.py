@@ -11,7 +11,8 @@ from sqlmodel import select
 from src.models.models import Author, ContentItem, Segment
 from src.adapters.sources.bilibili.service import BilibiliSourceService
 from src.adapters.sources.bilibili.types import AuthorProfile, VideoItem
-from src.adapters.asr.service import ASRService, AsrTranscription
+from src.adapters.asr.service import ASRService
+from src.adapters.asr.types import ASRAdapterError, AsrTranscriptionResult
 from src.adapters.storage.service import StorageService
 from src.core.config import settings
 import logging
@@ -338,9 +339,13 @@ class IngestionWorkflow:
             if not audio_ctx.reuse_object:
                 await self.storage.put_file(audio_ctx.audio_path, object_name)
 
-            transcription = await self.asr.transcribe(audio_ctx.audio_path)
-            return self._payload_to_subtitles(transcription, duration=video_meta.duration, content_external_id=content.external_id)
-        except Exception as asr_e:
+            transcription = await self.asr.transcribe_file(audio_ctx.audio_path)
+            return self._payload_to_subtitles(
+                transcription,
+                duration=video_meta.duration,
+                content_external_id=content.external_id,
+            )
+        except ASRAdapterError as asr_e:
             logger.error(f"ASR failed for {content.external_id}: {asr_e}")
             return []
         finally:
@@ -386,7 +391,7 @@ class IngestionWorkflow:
 
     def _payload_to_subtitles(
         self,
-        transcription: AsrTranscription,
+        transcription: AsrTranscriptionResult,
         duration: int,
         content_external_id: str,
     ) -> List[SubtitleItem]:
@@ -398,13 +403,23 @@ class IngestionWorkflow:
                 text_clean = seg.text.strip()
                 if not text_clean:
                     continue
-                subtitles.append(SubtitleItem(start_s=float(seg.start), end_s=float(seg.end), content=text_clean))
+                subtitles.append(SubtitleItem(start_s=float(seg.start_s), end_s=float(seg.end_s), content=text_clean))
+
+            if transcription.parse_warnings:
+                logger.info(
+                    "ASR parse warnings for %s: %s",
+                    content_external_id,
+                    ",".join(transcription.parse_warnings),
+                )
             return subtitles
 
         text_clean = transcription.text.strip()
         if text_clean:
             logger.info("ASR returned plain text without segments.")
-            return [SubtitleItem(start_s=0.0, end_s=float(duration), content=text_clean)]
+            end_s = float(duration) if duration else float(transcription.duration_s or 0.0)
+            if end_s <= 0.0:
+                end_s = 3600.0
+            return [SubtitleItem(start_s=0.0, end_s=end_s, content=text_clean)]
 
         logger.warning("ASR returned no segments/text for %s.", content_external_id)
         return []
