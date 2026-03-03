@@ -264,8 +264,8 @@ class IngestionWorkflow:
                     tmp_path = tmp_file.name
 
             object_name = f"avatars/{author_external_id}_{uuid.uuid4().hex}{ext}"
-            await self.storage.upload_file(tmp_path, object_name)
-            return self.storage.get_file_url(object_name)
+            ref = await self.storage.put_file(tmp_path, object_name)
+            return self.storage.presign_get(ref).url
         except Exception as e:
             logger.warning(f"Failed to store avatar {avatar_url}: {e}")
             return None
@@ -428,7 +428,7 @@ class IngestionWorkflow:
         try:
             object_name = f"{content.external_id}_{os.path.basename(audio_ctx.audio_path)}"
             if not audio_ctx.reuse_object:
-                await self.storage.upload_file(audio_ctx.audio_path, object_name)
+                await self.storage.put_file(audio_ctx.audio_path, object_name)
 
             transcription = await self.asr.transcribe(audio_ctx.audio_path)
             return self._payload_to_subtitles(transcription, duration=video_meta.duration, content_external_id=content.external_id)
@@ -441,13 +441,18 @@ class IngestionWorkflow:
     async def _get_audio_for_asr(self, content: ContentItem, reuse_audio_only: bool) -> Optional[AudioContext]:
         """Resolve an audio file path for ASR, either by reusing stored audio or downloading a new one."""
         audio_path: Optional[str] = None
-        reuse_object = self.storage.find_object_with_prefix(content.external_id)
-        if reuse_object:
-            local_name = os.path.basename(reuse_object)
+        reuse_object = self.storage.find_first_by_prefix(content.external_id)
+        reuse_object_name: Optional[str] = None
+        if reuse_object is not None:
+            reuse_object_name = reuse_object.object_name
+            local_name = os.path.basename(reuse_object_name)
             local_path = os.path.join(self.crawler.download_dir, local_name)
-            if self.storage.download_file(reuse_object, local_path):
+            try:
+                self.storage.get_to_file(reuse_object, local_path)
                 audio_path = local_path
-                logger.info(f"Reusing stored audio for {content.external_id}: {reuse_object}")
+                logger.info(f"Reusing stored audio for {content.external_id}: {reuse_object_name}")
+            except Exception as exc:
+                logger.warning(f"Failed to download stored audio for {content.external_id}: {exc}")
 
         if not audio_path and reuse_audio_only:
             logger.warning(f"No stored audio found for {content.external_id}; skipping ASR reuse-only run.")
@@ -459,7 +464,7 @@ class IngestionWorkflow:
         if not audio_path:
             return None
 
-        return AudioContext(audio_path=audio_path, reuse_object=reuse_object)
+        return AudioContext(audio_path=audio_path, reuse_object=reuse_object_name)
 
     def _cleanup_audio_file(self, audio_path: str) -> None:
         """Remove the temporary audio file if it exists."""

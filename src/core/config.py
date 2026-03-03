@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     SUMMARY_PROMPT_PROFILE: str = "video_summary/v1"
     MODEL_CONFIG_PATH: str = "src/models/provider_models.yaml"
     CATEGORY_BATCH_SIZE: int = 500
+
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_SECURE: bool = False
+    MINIO_BUCKET_NAME: str = "mind-analyst-files"
+    MINIO_PRESIGN_EXPIRES_S: int = 7 * 24 * 3600
     
     class Config:
         env_file = ".env"

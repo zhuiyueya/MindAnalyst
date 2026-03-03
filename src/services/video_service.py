@@ -67,17 +67,9 @@ class VideoService:
             raise HTTPException(status_code=404, detail="Video not found")
 
         storage = StorageService()
-        objects = storage.client.list_objects(storage.bucket_name, prefix=video.external_id, recursive=True)
-
-        target_obj = None
-        for obj in objects:
-            object_name = getattr(obj, "object_name", None)
-            if isinstance(object_name, str) and object_name.startswith(video.external_id):
-                target_obj = object_name
-                break
-
-        if not target_obj:
+        ref = storage.find_first_by_prefix(video.external_id)
+        if ref is None:
             raise HTTPException(status_code=404, detail="Media file not found in storage")
 
-        url = storage.get_file_url(target_obj)
+        url = storage.presign_get(ref).url
         return PlaybackUrlResult(url=url)

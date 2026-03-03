@@ -1,78 +1,131 @@
 import os
+import logging
 from typing import Optional
+
 from minio import Minio
 from minio.error import S3Error
-import logging
+from pydantic import BaseModel
+
+from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+class StorageError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str,
+        bucket: str,
+        object_name: Optional[str] = None,
+        prefix: Optional[str] = None,
+        cause: Optional[BaseException] = None,
+    ):
+        super().__init__(message)
+        self.operation = operation
+        self.bucket = bucket
+        self.object_name = object_name
+        self.prefix = prefix
+        self.cause = cause
+
+
+class StoredObjectRef(BaseModel):
+    bucket: str
+    object_name: str
+
+
+class PresignedUrl(BaseModel):
+    url: str
+
+
 class StorageService:
-    def __init__(self, endpoint: str = "localhost:9000", access_key: str = "minioadmin", secret_key: str = "minioadmin", secure: bool = False):
-        self.client = Minio(
-            endpoint,
-            access_key=access_key,
-            secret_key=secret_key,
-            secure=secure
+    def __init__(self):
+        self._client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
         )
-        self.bucket_name = "mind-analyst-files"
+        self._bucket = settings.MINIO_BUCKET_NAME
         self._ensure_bucket()
 
-    def _ensure_bucket(self):
+    def _ensure_bucket(self) -> None:
         try:
-            if not self.client.bucket_exists(self.bucket_name):
-                self.client.make_bucket(self.bucket_name)
-                logger.info(f"Created bucket: {self.bucket_name}")
-        except S3Error as e:
-            logger.error(f"MinIO bucket error: {e}")
+            if not self._client.bucket_exists(self._bucket):
+                self._client.make_bucket(self._bucket)
+                logger.info("Created bucket: %s", self._bucket)
+        except S3Error as exc:
+            raise StorageError(
+                "MinIO bucket ensure failed",
+                operation="ensure_bucket",
+                bucket=self._bucket,
+                cause=exc,
+            ) from exc
 
-    async def upload_file(self, file_path: str, object_name: Optional[str] = None) -> Optional[str]:
-        """
-        Upload a file to MinIO. Returns the object name.
-        """
+    async def put_file(self, local_path: str, object_name: str) -> StoredObjectRef:
         if not object_name:
-            object_name = os.path.basename(file_path)
-            
-        try:
-            # Upload file
-            self.client.fput_object(
-                self.bucket_name, object_name, file_path,
+            raise StorageError(
+                "object_name is required",
+                operation="put_file",
+                bucket=self._bucket,
+                object_name=object_name,
             )
-            logger.info(f"Uploaded {file_path} to {self.bucket_name}/{object_name}")
-            return object_name
-        except S3Error as e:
-            logger.error(f"Failed to upload {file_path}: {e}")
-            return None
-            
-    def get_file_url(self, object_name: str) -> str:
-        """
-        Get a presigned URL for the file (valid for 7 days)
-        """
         try:
-            return self.client.presigned_get_object(self.bucket_name, object_name)
-        except Exception as e:
-            logger.error(f"Failed to get URL for {object_name}: {e}")
-            return ""
+            self._client.fput_object(self._bucket, object_name, local_path)
+            logger.info("Uploaded %s to %s/%s", local_path, self._bucket, object_name)
+            return StoredObjectRef(bucket=self._bucket, object_name=object_name)
+        except S3Error as exc:
+            raise StorageError(
+                f"Failed to upload file: {os.path.basename(local_path)}",
+                operation="put_file",
+                bucket=self._bucket,
+                object_name=object_name,
+                cause=exc,
+            ) from exc
 
-    def find_object_with_prefix(self, prefix: str) -> Optional[str]:
-        """
-        Find the first object whose name starts with prefix.
-        """
+    def find_first_by_prefix(self, prefix: str) -> Optional[StoredObjectRef]:
+        if not prefix:
+            return None
         try:
-            objects = self.client.list_objects(self.bucket_name, prefix=prefix, recursive=True)
+            objects = self._client.list_objects(self._bucket, prefix=prefix, recursive=True)
             for obj in objects:
                 object_name = getattr(obj, "object_name", None)
                 if isinstance(object_name, str) and object_name.startswith(prefix):
-                    return object_name
-        except Exception as e:
-            logger.error(f"Failed to list objects with prefix {prefix}: {e}")
-        return None
+                    return StoredObjectRef(bucket=self._bucket, object_name=object_name)
+            return None
+        except Exception as exc:
+            raise StorageError(
+                "Failed to list objects",
+                operation="find_first_by_prefix",
+                bucket=self._bucket,
+                prefix=prefix,
+                cause=exc,
+            ) from exc
 
-    def download_file(self, object_name: str, target_path: str) -> bool:
-        """Download a file from MinIO to local path."""
+    def get_to_file(self, ref: StoredObjectRef, target_path: str) -> None:
         try:
-            self.client.fget_object(self.bucket_name, object_name, target_path)
-            logger.info(f"Downloaded {object_name} to {target_path}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to download {object_name}: {e}")
-            return False
+            self._client.fget_object(ref.bucket, ref.object_name, target_path)
+            logger.info("Downloaded %s/%s to %s", ref.bucket, ref.object_name, target_path)
+        except Exception as exc:
+            raise StorageError(
+                "Failed to download object",
+                operation="get_to_file",
+                bucket=ref.bucket,
+                object_name=ref.object_name,
+                cause=exc,
+            ) from exc
+
+    def presign_get(self, ref: StoredObjectRef, expires_in_s: Optional[int] = None) -> PresignedUrl:
+        expires = expires_in_s if expires_in_s is not None else settings.MINIO_PRESIGN_EXPIRES_S
+        try:
+            url = self._client.presigned_get_object(ref.bucket, ref.object_name, expires=expires)
+            return PresignedUrl(url=url)
+        except Exception as exc:
+            raise StorageError(
+                "Failed to presign object URL",
+                operation="presign_get",
+                bucket=ref.bucket,
+                object_name=ref.object_name,
+                cause=exc,
+            ) from exc
