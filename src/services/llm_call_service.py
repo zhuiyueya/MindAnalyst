@@ -1,16 +1,51 @@
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.utils import parse_datetime
+from src.adapters.llm.types import LLMCallRecord
 from src.domain.results import LlmCallsPageResult
+from src.models.models import LLMCallLog
 from src.repositories.llm_call_log_repo import LlmCallLogRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 class LlmCallService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.repo = LlmCallLogRepository(session)
+
+    async def record_call_safe(self, record: LLMCallRecord) -> None:
+        try:
+            usage = record.usage.model_dump() if record.usage is not None else {}
+            log = LLMCallLog(
+                task_type=record.task_type,
+                content_type=record.content_type,
+                profile_key=record.profile_key,
+                model=record.model,
+                system_prompt=record.system_prompt,
+                user_prompt=record.user_prompt,
+                request_meta=record.request_meta,
+                response_text=record.response_text,
+                response_meta={
+                    **(record.response_meta or {}),
+                    **({"usage": usage} if usage else {}),
+                    **({"parse_warnings": record.parse_warnings} if record.parse_warnings else {}),
+                },
+                prompt_tokens=usage.get("prompt_tokens"),
+                completion_tokens=usage.get("completion_tokens"),
+                total_tokens=usage.get("total_tokens"),
+                status=record.status,
+                error_message=record.error_message,
+            )
+            await self.repo.add(log)
+        except Exception as exc:
+            logger.warning("Failed to record LLM call log: %s", exc)
+            return
 
     async def list_llm_calls(
         self,

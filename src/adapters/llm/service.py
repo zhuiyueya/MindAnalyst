@@ -8,9 +8,23 @@ from openai import AsyncOpenAI
 from src.core.config import settings
 from src.prompts.manager import PromptManager
 from src.prompts.registry import PromptRegistry
-from src.database.db import get_session
-from src.models.models import LLMCallLog
 from src.models.provider_registry import ModelProviderRegistry
+from src.adapters.llm.types import (
+    AuthorReportResult,
+    AuthorCategoriesResult,
+    BatchSelectCandidatesResult,
+    ContentTypeResult,
+    FinalSelectCandidatesResult,
+    LLMCallRecord,
+    LLMUsage,
+    RagAnswerResult,
+    RagIntentResult,
+    RerankResult,
+    ShortSummaryResult,
+    SummaryBlock,
+    SummaryResult,
+    TagVideoCategoryResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -224,12 +238,35 @@ class LLMService:
         status: str = "success",
         error_message: Optional[str] = None
     ) -> None:
-        usage_dict = self._usage_to_dict(usage)
-        response_meta = response_meta or {}
-        if usage_dict:
-            response_meta = {**response_meta, "usage": usage_dict}
+        return
 
-        log_entry = LLMCallLog(
+    def _build_call_record(
+        self,
+        *,
+        task_type: str,
+        content_type: Optional[str],
+        profile_key: Optional[str],
+        system_prompt: str,
+        user_prompt: str,
+        model: Optional[str],
+        request_meta: Optional[Dict[str, Any]] = None,
+        response_text: Optional[str] = None,
+        response_meta: Optional[Dict[str, Any]] = None,
+        usage: Any = None,
+        status: str = "success",
+        error_message: Optional[str] = None,
+        parse_warnings: Optional[List[str]] = None,
+    ) -> LLMCallRecord:
+        usage_dict = self._usage_to_dict(usage)
+        usage_model: Optional[LLMUsage] = None
+        if usage_dict:
+            usage_model = LLMUsage(
+                prompt_tokens=usage_dict.get("prompt_tokens"),
+                completion_tokens=usage_dict.get("completion_tokens"),
+                total_tokens=usage_dict.get("total_tokens"),
+            )
+
+        return LLMCallRecord(
             task_type=task_type,
             content_type=content_type,
             profile_key=profile_key,
@@ -238,21 +275,12 @@ class LLMService:
             user_prompt=user_prompt,
             request_meta=request_meta or {},
             response_text=response_text,
-            response_meta=response_meta,
-            prompt_tokens=usage_dict.get("prompt_tokens"),
-            completion_tokens=usage_dict.get("completion_tokens"),
-            total_tokens=usage_dict.get("total_tokens"),
-            status=status,
-            error_message=error_message
+            response_meta=response_meta or {},
+            usage=usage_model,
+            status="success" if status != "error" else "error",
+            error_message=error_message,
+            parse_warnings=parse_warnings or [],
         )
-
-        try:
-            async for session in get_session():
-                session.add(log_entry)
-                await session.commit()
-                break
-        except Exception as exc:
-            logger.warning(f"Failed to log LLM call: {exc}")
 
     def _is_v2_summary(self, profile_key: str) -> bool:
         return "summary_single/v2" in profile_key or profile_key == "video_summary/v2"
@@ -309,11 +337,11 @@ class LLMService:
             "profile": profile_key,
         }
 
-    async def classify_content_type(self, text: str) -> Optional[str]:
+    async def classify_content_type(self, text: str) -> ContentTypeResult:
         profile_key = self.prompt_registry.get_prompt_key("content.classify", None, require_override=False)
         if not profile_key:
             logger.warning("No content.classify profile configured")
-            return None
+            return ContentTypeResult(content_type=None, call=None)
         content = None
         truncated_text = text[:20000]
         prompts = self.prompt_manager.get_prompt(profile_key, text=truncated_text)
@@ -324,7 +352,7 @@ class LLMService:
         }
         client, model_name, model_id, provider = self._get_client_for_scene("content.classify")
         if not client:
-            return None
+            return ContentTypeResult(content_type=None, call=None)
 
         try:
             response, content = await self._chat_completion(
@@ -339,7 +367,7 @@ class LLMService:
             logger.info("LLM raw response (content.classify): %s", self._response_to_debug(response))
             data = json.loads(content or "{}")
             value = data.get("content_type") if isinstance(data, dict) else None
-            await self._log_call(
+            call = self._build_call_record(
                 task_type="content.classify",
                 content_type=None,
                 profile_key=profile_key,
@@ -349,11 +377,12 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
             )
-            return self._ensure_str(value) if value else None
+            return ContentTypeResult(content_type=self._ensure_str(value) if value else None, call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error(f"Content classify failed: {e}")
+            call = self._build_call_record(
                 task_type="content.classify",
                 content_type=None,
                 profile_key=profile_key,
@@ -363,12 +392,11 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error(f"Content classify failed: {e}")
-            return None
+            return ContentTypeResult(content_type=None, call=call)
 
-    async def generate_short_summary(self, text: str, content_type: Optional[str]) -> Dict[str, Any]:
+    async def generate_short_summary(self, text: str, content_type: Optional[str]) -> ShortSummaryResult:
         resolved_type = content_type or "generic"
         profile_key = self.prompt_registry.get_prompt_key("summary.short", resolved_type, require_override=True)
         if not profile_key:
@@ -377,15 +405,12 @@ class LLMService:
 
         client, model_name, model_id, provider = self._get_client_for_scene("summary.short")
         if not client:
-            return {
-                "raw": {
-                    "keywords": [],
-                    "summary": "LLM not configured",
-                    "is_trash": False
-                },
-                "profile": profile_key,
-                "content_type": resolved_type
-            }
+            return ShortSummaryResult(
+                raw={"keywords": [], "summary": "LLM not configured", "is_trash": False},
+                profile=profile_key,
+                content_type=resolved_type,
+                call=None,
+            )
 
         content = None
         truncated_text = text[:30000]
@@ -409,7 +434,7 @@ class LLMService:
             )
             logger.info("LLM raw response (summary.short): %s", self._response_to_debug(response))
             raw = self._parse_json_response(content or "")
-            await self._log_call(
+            call = self._build_call_record(
                 task_type="summary.short",
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -419,15 +444,13 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
+                parse_warnings=["json_parse_error"] if "parse_error" in raw else [],
             )
-            return {
-                "raw": raw,
-                "profile": profile_key,
-                "content_type": resolved_type
-            }
+            return ShortSummaryResult(raw=raw, profile=profile_key, content_type=resolved_type, call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error("Short summary generation failed: %s", e)
+            call = self._build_call_record(
                 task_type="summary.short",
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -437,12 +460,11 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error("Short summary generation failed: %s", e)
-            return {"error": str(e)}
+            return ShortSummaryResult(raw={"error": str(e)}, profile=profile_key, content_type=resolved_type, call=call)
 
-    async def generate_summary(self, text: str, content_type: Optional[str], task_type: str = "summary.single") -> Dict[str, Any]:
+    async def generate_summary(self, text: str, content_type: Optional[str], task_type: str = "summary.single") -> SummaryResult:
         """
         Generate structured summary for a video content.
         """
@@ -456,12 +478,7 @@ class LLMService:
         client, model_name, model_id, provider = self._get_client_for_scene(scene)
         if not client:
             raw_text = "LLM not configured"
-            return {
-                "raw_text": raw_text,
-                "blocks": [],
-                "profile": profile_key,
-                "content_type": resolved_type
-            }
+            return SummaryResult(raw_text=raw_text, blocks=[], profile=profile_key, content_type=resolved_type, call=None)
         content = None
         truncated_text = text[:30000]
         prompts = self.prompt_manager.get_prompt(profile_key, text=truncated_text)
@@ -484,8 +501,9 @@ class LLMService:
             )
             logger.info("LLM raw response (summary.single): %s", self._response_to_debug(response))
             raw_text = (content or "").strip()
-            blocks = self._parse_summary_blocks(raw_text)
-            await self._log_call(
+            blocks_raw = self._parse_summary_blocks(raw_text)
+            blocks = [SummaryBlock(type=b.get("type", ""), text=b.get("text", "")) for b in blocks_raw if isinstance(b, dict)]
+            call = self._build_call_record(
                 task_type=task_type,
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -494,20 +512,13 @@ class LLMService:
                 model=getattr(response, "model", model_name),
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
-                response_meta={
-                    "finish_reason": response.choices[0].finish_reason,
-                    "block_count": len(blocks)
-                },
-                usage=getattr(response, "usage", None)
+                response_meta={"finish_reason": response.choices[0].finish_reason, "block_count": len(blocks)},
+                usage=getattr(response, "usage", None),
             )
-            return {
-                "raw_text": raw_text,
-                "blocks": blocks,
-                "profile": profile_key,
-                "content_type": resolved_type
-            }
+            return SummaryResult(raw_text=raw_text, blocks=blocks, profile=profile_key, content_type=resolved_type, call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error(f"Summary generation failed: {e}")
+            call = self._build_call_record(
                 task_type=task_type,
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -517,17 +528,16 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error(f"Summary generation failed: {e}")
-            return {"error": str(e)}
+            return SummaryResult(raw_text="", blocks=[], profile=profile_key, content_type=resolved_type, call=call)
 
     async def generate_author_report(
         self,
         summaries: List[Dict[str, Any]],
         content_type: Optional[str],
         context_override: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> AuthorReportResult:
         """
         Generate author-level report from multiple video summaries.
         """
@@ -539,7 +549,7 @@ class LLMService:
 
         client, model_name, model_id, provider = self._get_client_for_scene("report.author")
         if not client:
-            return {"report": "LLM not configured", "profile": profile_key, "content_type": resolved_type}
+            return AuthorReportResult(raw={"report": "LLM not configured"}, profile=profile_key, content_type=resolved_type, call=None)
             
         # Aggregate summaries or use full-text override
         context_source = "summaries"
@@ -576,7 +586,7 @@ class LLMService:
             )
             logger.info("LLM raw response (report.author): %s", self._response_to_debug(response))
             raw = self._parse_json_response(content)
-            await self._log_call(
+            call = self._build_call_record(
                 task_type="report.author",
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -586,11 +596,13 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
+                parse_warnings=["json_parse_error"] if isinstance(raw, dict) and "parse_error" in raw else [],
             )
-            return {"raw": raw, "profile": profile_key, "content_type": resolved_type}
+            return AuthorReportResult(raw=raw if isinstance(raw, dict) else {"raw": raw}, profile=profile_key, content_type=resolved_type, call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error(f"Report generation failed: {e}")
+            call = self._build_call_record(
                 task_type="report.author",
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -600,12 +612,11 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error(f"Report generation failed: {e}")
-            return {"error": str(e)}
+            return AuthorReportResult(raw={"error": str(e)}, profile=profile_key, content_type=resolved_type, call=call)
 
-    async def rerank(self, query: str, documents: List[str], top_n: int = 5, content_type: Optional[str] = None) -> List[int]:
+    async def rerank(self, query: str, documents: List[str], top_n: int = 5, content_type: Optional[str] = None) -> RerankResult:
         """
         Rerank documents based on query. Returns indices of top_n documents.
         """
@@ -617,7 +628,7 @@ class LLMService:
 
         client, model_name, model_id, provider = self._get_client_for_scene("rag.rerank")
         if not client:
-            return list(range(min(len(documents), top_n)))
+            return RerankResult(indices=list(range(min(len(documents), top_n))), call=None)
 
         prompts = self.prompt_manager.get_prompt(
             profile_key,
@@ -642,8 +653,17 @@ class LLMService:
                 require_json=True,
             )
             logger.info("LLM raw response (rag.rerank): %s", self._response_to_debug(response))
-            result = json.loads(content or "{}")
-            await self._log_call(
+            result = self._parse_json_response(content or "")
+            indices_raw: object = result.get("indices") if isinstance(result, dict) else None
+            indices: List[int] = []
+            if isinstance(indices_raw, list):
+                for i in cast(List[Any], indices_raw):
+                    try:
+                        indices.append(int(i))
+                    except Exception:
+                        continue
+            indices = [i for i in indices if 0 <= i < len(documents)][:top_n]
+            call = self._build_call_record(
                 task_type="rag.rerank",
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -653,12 +673,16 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
+                parse_warnings=["json_parse_error"] if isinstance(result, dict) and "parse_error" in result else [],
             )
-            indices = result.get("indices", [])
-            return [int(i) for i in indices if isinstance(i, (int, str)) and int(i) < len(documents)]
+            if not indices:
+                indices = list(range(min(len(documents), top_n)))
+                call.parse_warnings.append("rerank_indices_empty_fallback")
+            return RerankResult(indices=indices, call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error(f"Rerank failed: {e}")
+            call = self._build_call_record(
                 task_type="rag.rerank",
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -667,19 +691,18 @@ class LLMService:
                 model=model_name,
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error(f"Rerank failed: {e}")
-            return list(range(min(len(documents), top_n)))
+            return RerankResult(indices=list(range(min(len(documents), top_n))), call=call)
 
-    async def classify_rag_intent(self, query: str, prompt: str) -> Dict[str, Any]:
+    async def classify_rag_intent(self, query: str, prompt: str) -> RagIntentResult:
         """Classify query intent for RAG routing.
 
         Returns a dict like: {"route": "author_report"|"summary_chunk"|"summary_short", "tags": [...], "query": "..."}
         """
         client, model_name, model_id, provider = self._get_client_for_scene("rag.rerank")
         if not client:
-            return {"route": "summary_chunk", "tags": [], "query": query}
+            return RagIntentResult(route="summary_chunk", tags=[], query=query, raw={}, call=None)
 
         request_meta = {"query_chars": len(query)}
         content = None
@@ -695,7 +718,19 @@ class LLMService:
             )
             logger.info("LLM raw response (rag.router): %s", self._response_to_debug(response))
             data = self._parse_json_response(content)
-            await self._log_call(
+            raw_dict = data if isinstance(data, dict) else {"raw": data}
+            route_raw: object = raw_dict.get("route")
+            tags_raw: object = raw_dict.get("tags")
+            q_raw: object = raw_dict.get("query")
+            tags: List[str] = []
+            if isinstance(tags_raw, list):
+                for x in cast(List[Any], tags_raw):
+                    sx = str(x).strip()
+                    if sx:
+                        tags.append(sx)
+            q = q_raw.strip() if isinstance(q_raw, str) and q_raw.strip() else query
+            route = str(route_raw).strip() if isinstance(route_raw, str) and route_raw.strip() else "summary_chunk"
+            call = self._build_call_record(
                 task_type="rag.router",
                 content_type=None,
                 profile_key=None,
@@ -706,10 +741,12 @@ class LLMService:
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
                 usage=getattr(response, "usage", None),
+                parse_warnings=["json_parse_error"] if isinstance(raw_dict, dict) and "parse_error" in raw_dict else [],
             )
-            return data if isinstance(data, dict) else {"raw": data}
+            return RagIntentResult(route=route, tags=tags, query=q, raw=raw_dict, call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error("RAG router classify failed: %s", e)
+            call = self._build_call_record(
                 task_type="rag.router",
                 content_type=None,
                 profile_key=None,
@@ -721,10 +758,9 @@ class LLMService:
                 status="error",
                 error_message=str(e),
             )
-            logger.error("RAG router classify failed: %s", e)
-            return {"route": "summary_chunk", "tags": [], "query": query, "error": str(e)}
+            return RagIntentResult(route="summary_chunk", tags=[], query=query, raw={"error": str(e)}, call=call)
 
-    async def generate_rag_answer(self, query: str, context_str: str, content_type: Optional[str]) -> str:
+    async def generate_rag_answer(self, query: str, context_str: str, content_type: Optional[str]) -> RagAnswerResult:
         resolved_type = content_type or "generic"
         profile_key = self.prompt_registry.get_prompt_key("rag.answer", resolved_type, require_override=True)
         if not profile_key:
@@ -734,7 +770,10 @@ class LLMService:
         prompts = self.prompt_manager.get_prompt(profile_key, query=query, context_str=context_str)
         client, model_name, model_id, provider = self._get_client_for_scene("rag.answer")
         if not client:
-            return "【模拟回答】基于片段 [1]，作者提到了相关概念。\n(请配置 OPENAI_API_KEY 以启用真实 LLM 回答)"
+            return RagAnswerResult(
+                answer="【模拟回答】基于片段 [1]，作者提到了相关概念。\n(请配置 OPENAI_API_KEY 以启用真实 LLM 回答)",
+                call=None,
+            )
         request_meta = {
             "query_chars": len(query),
             "context_chars": len(context_str)
@@ -750,7 +789,7 @@ class LLMService:
                 require_json=False,
             )
             logger.info("LLM raw response (rag.answer): %s", self._response_to_debug(response))
-            await self._log_call(
+            call = self._build_call_record(
                 task_type="rag.answer",
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -760,11 +799,12 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
             )
-            return content or ""
+            return RagAnswerResult(answer=content or "", call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error(f"RAG answer failed: {e}")
+            call = self._build_call_record(
                 task_type="rag.answer",
                 content_type=resolved_type,
                 profile_key=profile_key,
@@ -772,16 +812,16 @@ class LLMService:
                 user_prompt=prompts["user"],
                 model=model_name,
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
+                response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error(f"RAG answer failed: {e}")
-            return f"Error calling LLM: {e}"
+            return RagAnswerResult(answer=f"Error calling LLM: {e}", call=call)
 
-    async def select_batch_candidates(self, items: List[Dict[str, Any]], top_min: int = 5, top_max: int = 8) -> Dict[str, Any]:
+    async def select_batch_candidates(self, items: List[Dict[str, Any]], top_min: int = 5, top_max: int = 8) -> BatchSelectCandidatesResult:
         client, model_name, model_id, provider = self._get_client_for_scene("batch.select_candidates")
         if not client:
-            return {"selected_ids": []}
+            return BatchSelectCandidatesResult(selected_ids=[], call=None)
 
         prompt = (
             "你是内容分析助手，请从给定内容中挑选最有深度的条目。\n"
@@ -806,7 +846,15 @@ class LLMService:
                 require_json=True,
             )
             data = self._parse_json_response(content)
-            await self._log_call(
+            selected_ids_raw: object = data.get("selected_ids") if isinstance(data, dict) else None
+            selected_ids: List[str] = []
+            if isinstance(selected_ids_raw, list):
+                for x in cast(List[Any], selected_ids_raw):
+                    sx = str(x).strip()
+                    if sx:
+                        selected_ids.append(sx)
+
+            call = self._build_call_record(
                 task_type="batch.select_candidates",
                 content_type=None,
                 profile_key=None,
@@ -816,11 +864,13 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
+                parse_warnings=["json_parse_error"] if isinstance(data, dict) and "parse_error" in data else [],
             )
-            return data
+            return BatchSelectCandidatesResult(selected_ids=selected_ids, raw=data if isinstance(data, dict) else {"raw": data}, call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error("Batch candidate selection failed: %s", e)
+            call = self._build_call_record(
                 task_type="batch.select_candidates",
                 content_type=None,
                 profile_key=None,
@@ -830,15 +880,14 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error("Batch candidate selection failed: %s", e)
-            return {"error": str(e)}
+            return BatchSelectCandidatesResult(selected_ids=[], raw={"error": str(e)}, call=call)
 
-    async def select_final_candidates(self, items: List[Dict[str, Any]], top_n: int = 20) -> Dict[str, Any]:
+    async def select_final_candidates(self, items: List[Dict[str, Any]], top_n: int = 20) -> FinalSelectCandidatesResult:
         client, model_name, model_id, provider = self._get_client_for_scene("batch.final_select")
         if not client:
-            return {"selected_ids": [], "category_list": []}
+            return FinalSelectCandidatesResult(selected_ids=[], category_list=[], raw={}, call=None)
 
         prompt = (
             "你是内容策展助手，请根据摘要挑选最具代表性的内容。\n"
@@ -858,7 +907,22 @@ class LLMService:
                 require_json=True,
             )
             data = self._parse_json_response(content)
-            await self._log_call(
+            selected_ids_raw: object = data.get("selected_ids") if isinstance(data, dict) else None
+            category_list_raw: object = data.get("category_list") if isinstance(data, dict) else None
+            selected_ids: List[str] = []
+            if isinstance(selected_ids_raw, list):
+                for x in cast(List[Any], selected_ids_raw):
+                    sx = str(x).strip()
+                    if sx:
+                        selected_ids.append(sx)
+            category_list: List[str] = []
+            if isinstance(category_list_raw, list):
+                for x in cast(List[Any], category_list_raw):
+                    sx = str(x).strip()
+                    if sx:
+                        category_list.append(sx)
+
+            call = self._build_call_record(
                 task_type="batch.final_select",
                 content_type=None,
                 profile_key=None,
@@ -868,11 +932,18 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
+                parse_warnings=["json_parse_error"] if isinstance(data, dict) and "parse_error" in data else [],
             )
-            return data
+            return FinalSelectCandidatesResult(
+                selected_ids=selected_ids,
+                category_list=category_list,
+                raw=data if isinstance(data, dict) else {"raw": data},
+                call=call,
+            )
         except Exception as e:
-            await self._log_call(
+            logger.error("Final candidate selection failed: %s", e)
+            call = self._build_call_record(
                 task_type="batch.final_select",
                 content_type=None,
                 profile_key=None,
@@ -882,15 +953,14 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error("Final candidate selection failed: %s", e)
-            return {"error": str(e)}
+            return FinalSelectCandidatesResult(selected_ids=[], category_list=[], raw={"error": str(e)}, call=call)
 
-    async def generate_author_categories(self, category_list: List[str], summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def generate_author_categories(self, category_list: List[str], summaries: List[Dict[str, Any]]) -> AuthorCategoriesResult:
         client, model_name, model_id, provider = self._get_client_for_scene("author.final_categories")
         if not client:
-            return {"category_list": category_list}
+            return AuthorCategoriesResult(category_list=category_list, raw={"category_list": category_list}, call=None)
 
         prompt = (
             "你是内容分类助手，请根据候选分类与代表摘要生成最终分类。\n"
@@ -910,7 +980,15 @@ class LLMService:
                 require_json=True,
             )
             data = self._parse_json_response(content)
-            await self._log_call(
+            final_categories_raw: object = data.get("category_list") if isinstance(data, dict) else None
+            final_categories: List[str] = []
+            if isinstance(final_categories_raw, list):
+                for x in cast(List[Any], final_categories_raw):
+                    sx = str(x).strip()
+                    if sx:
+                        final_categories.append(sx)
+
+            call = self._build_call_record(
                 task_type="author.final_categories",
                 content_type=None,
                 profile_key=None,
@@ -920,11 +998,17 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
+                parse_warnings=["json_parse_error"] if isinstance(data, dict) and "parse_error" in data else [],
             )
-            return data
+            return AuthorCategoriesResult(
+                category_list=final_categories or category_list,
+                raw=data if isinstance(data, dict) else {"raw": data},
+                call=call,
+            )
         except Exception as e:
-            await self._log_call(
+            logger.error("Author category generation failed: %s", e)
+            call = self._build_call_record(
                 task_type="author.final_categories",
                 content_type=None,
                 profile_key=None,
@@ -934,15 +1018,14 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error("Author category generation failed: %s", e)
-            return {"error": str(e)}
+            return AuthorCategoriesResult(category_list=category_list, raw={"error": str(e)}, call=call)
 
-    async def tag_video_category(self, category_list: List[str], summary: Dict[str, Any]) -> Dict[str, Any]:
+    async def tag_video_category(self, category_list: List[str], summary: Dict[str, Any]) -> TagVideoCategoryResult:
         client, model_name, model_id, provider = self._get_client_for_scene("video.category_tagging")
         if not client:
-            return {"category": None}
+            return TagVideoCategoryResult(category=None, raw={}, call=None)
 
         prompt = (
             "你是内容标签助手，根据分类列表为单条内容选择最匹配的分类。\n"
@@ -962,7 +1045,9 @@ class LLMService:
                 require_json=True,
             )
             data = self._parse_json_response(content)
-            await self._log_call(
+            category_raw: object = data.get("category") if isinstance(data, dict) else None
+            category = str(category_raw).strip() if isinstance(category_raw, str) and str(category_raw).strip() else None
+            call = self._build_call_record(
                 task_type="video.category_tagging",
                 content_type=None,
                 profile_key=None,
@@ -972,11 +1057,13 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 response_meta={"finish_reason": response.choices[0].finish_reason},
-                usage=getattr(response, "usage", None)
+                usage=getattr(response, "usage", None),
+                parse_warnings=["json_parse_error"] if isinstance(data, dict) and "parse_error" in data else [],
             )
-            return data
+            return TagVideoCategoryResult(category=category, raw=data if isinstance(data, dict) else {"raw": data}, call=call)
         except Exception as e:
-            await self._log_call(
+            logger.error("Video category tagging failed: %s", e)
+            call = self._build_call_record(
                 task_type="video.category_tagging",
                 content_type=None,
                 profile_key=None,
@@ -986,7 +1073,6 @@ class LLMService:
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error("Video category tagging failed: %s", e)
-            return {"error": str(e)}
+            return TagVideoCategoryResult(category=None, raw={"error": str(e)}, call=call)

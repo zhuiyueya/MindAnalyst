@@ -13,6 +13,10 @@ class LlmCallLogRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def add(self, log: LLMCallLog) -> None:
+        self.session.add(log)
+        await self.session.commit()
+
     async def list(
         self,
         *,
