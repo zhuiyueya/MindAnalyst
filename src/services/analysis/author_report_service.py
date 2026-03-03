@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.llm.service import LLMService
 from src.core.config import settings
+from src.services.llm_call_service import LlmCallService
 from src.models.models import Author, AuthorReport, ContentItem, Segment, Summary
 from src.repositories.segment_repo import SegmentRepository
 from src.repositories.summary_repo import SummaryRepository
@@ -19,6 +20,7 @@ class AuthorReportService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.llm = LLMService()
+        self.llm_calls = LlmCallService(session)
         self.summaries = SummaryRepository(session)
         self.segments = SegmentRepository(session)
 
@@ -453,24 +455,21 @@ class AuthorReportService:
                 content_type,
                 context_override=context_override
             )
-            if "error" in result:
-                logger.warning(f"Report generation failed: {result['error']}")
+            if result.call:
+                await self.llm_calls.record_call_safe(result.call)
+            if result.call and result.call.status == "error":
+                logger.warning(f"Report generation failed: {result.call.error_message}")
                 continue
 
-            raw = result.get("raw") if isinstance(result, dict) else None
-            if isinstance(raw, dict):
-                report_content = json.dumps(raw, ensure_ascii=False, indent=2)
-            elif raw is not None:
-                report_content = json.dumps(raw, ensure_ascii=False)
-            else:
-                report_content = ""
+            raw = result.raw
+            report_content = json.dumps(raw, ensure_ascii=False, indent=2) if raw else ""
             report = AuthorReport(
                 author_id=author_id,
                 content_type=content_type,
                 report_type="report.author",
-                report_version=self._extract_report_version(result.get("profile") if isinstance(result, dict) else None),
+                report_version=self._extract_report_version(result.profile),
                 content=report_content,
-                json_data=result if isinstance(result, dict) else {"raw": raw}
+                json_data={"raw": raw, "profile": result.profile, "content_type": result.content_type}
             )
             self.session.add(report)
 
@@ -605,7 +604,9 @@ class AuthorReportService:
                 )
                 continue
 
-            if not isinstance(result, dict) or "error" in result:
+            if result.call:
+                await self.llm_calls.record_call_safe(result.call)
+            if result.call and result.call.status == "error":
                 skipped += 1
                 elapsed_ms = int((time.monotonic() - started_at) * 1000)
                 logger.warning(
@@ -616,28 +617,23 @@ class AuthorReportService:
                     len(categories),
                     len(items),
                     elapsed_ms,
-                    result,
+                    result.raw,
                 )
                 continue
 
-            raw = result.get("raw") if isinstance(result, dict) else None
-            if isinstance(raw, dict):
-                report_content = json.dumps(raw, ensure_ascii=False, indent=2)
-            elif raw is not None:
-                report_content = json.dumps(raw, ensure_ascii=False)
-            else:
-                report_content = ""
+            raw = result.raw
+            report_content = json.dumps(raw, ensure_ascii=False, indent=2) if raw else ""
 
             report = AuthorReport(
                 author_id=author_id,
                 content_type=content_type,
                 report_type="report.author.category",
-                report_version=self._extract_report_version(result.get("profile") if isinstance(result, dict) else None),
+                report_version=self._extract_report_version(result.profile),
                 content=report_content,
                 json_data={
                     "category": category,
                     "video_count": len(items),
-                    "llm_result": result,
+                    "llm_result": {"raw": raw, "profile": result.profile, "content_type": result.content_type},
                 },
             )
             self.session.add(report)

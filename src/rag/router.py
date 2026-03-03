@@ -56,30 +56,18 @@ class RagRouter:
                 return {"route": "summary_chunk", "tags": ["观点", "金句"], "query": normalized}
 
         try:
-            raw: Any = await self.llm.classify_rag_intent(query=query, prompt=prompt)
+            intent = await self.llm.classify_rag_intent(query=query, prompt=prompt)
         except Exception as e:
             logger.warning("RAG router failed, fallback to summary_chunk: %s", e)
-            raw = {"route": "summary_chunk", "tags": [], "query": query}
+            intent = None
 
-        if isinstance(raw, dict):
-            data: dict[str, Any] = cast(dict[str, Any], raw)
-        else:
-            data = {"route": "summary_chunk", "tags": [], "query": query}
+        data: dict[str, Any] = intent.raw if intent is not None else {"route": "summary_chunk", "tags": [], "query": query}
 
-        route_raw = data.get("route")
-        route = route_raw if isinstance(route_raw, str) and route_raw else None
+        route = (intent.route if intent is not None else None) or None
         if route == "author_report" and not author_id:
             route = "summary_chunk"
 
-        tags_raw = data.get("tags")
-        tags: list[str] = []
-        if isinstance(tags_raw, list):
-            for x in cast(list[Any], tags_raw):
-                sx = str(x).strip()
-                if sx:
-                    tags.append(sx)
-
-        q_raw = data.get("query")
-        q = q_raw.strip() if isinstance(q_raw, str) and q_raw.strip() else query
+        tags: list[str] = intent.tags if intent is not None else []
+        q = intent.query if intent is not None else query
 
         return {"route": route or "summary_chunk", "tags": tags, "query": q}

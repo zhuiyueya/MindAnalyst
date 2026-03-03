@@ -25,7 +25,8 @@ class RerankService:
             return []
 
         doc_texts: List[str] = [str(d.text or "") for d in docs]
-        top_indices = await self.llm.rerank(query, doc_texts, top_n=top_k, content_type=content_type)
+        res = await self.llm.rerank(query, doc_texts, top_n=top_k, content_type=content_type)
+        top_indices = res.indices
 
         if not top_indices:
             logger.info("Rerank returned empty indices; fallback to original order top_k=%s", top_k)

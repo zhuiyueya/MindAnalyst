@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from src.models.models import ContentItem, Segment, Summary, AuthorReport, Author
 from src.adapters.llm.service import LLMService
-from src.database.db import get_session
 from src.core.config import settings
+from src.services.llm_call_service import LlmCallService
 from src.services.analysis.author_category_service import AuthorCategoryService
 from src.services.analysis.author_report_service import AuthorReportService
 from src.services.analysis.author_summary_service import AuthorSummaryService
@@ -19,6 +19,7 @@ class AnalysisWorkflow:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.llm = LLMService()
+        self.llm_calls = LlmCallService(session)
 
     async def _resolve_author(self, content: ContentItem) -> Optional[Author]:
         if not content.author_id:
@@ -38,13 +39,15 @@ class AnalysisWorkflow:
         if content.content_type:
             return content.content_type
 
-        classified = await self.llm.classify_content_type(full_text)
-        if classified:
-            content.content_type = classified
+        classified_res = await self.llm.classify_content_type(full_text)
+        if classified_res.call:
+            await self.llm_calls.record_call_safe(classified_res.call)
+        if classified_res.content_type:
+            content.content_type = classified_res.content_type
             content.content_type_source = "classifier"
             self.session.add(content)
             await self.session.commit()
-            return classified
+            return classified_res.content_type
 
         return "generic"
 

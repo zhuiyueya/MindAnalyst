@@ -4,6 +4,7 @@ from typing import Any, List, Optional, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.llm.service import LLMService
+from src.services.llm_call_service import LlmCallService
 from src.rag.context_builder import build_context_and_citations
 from src.rag.retrieval import RetrievalService
 from src.rag.rerank import RerankService
@@ -19,6 +20,7 @@ class RAGEngine:
         self.retrieval = RetrievalService(session)
         self.reranker = RerankService()
         self.llm = LLMService()
+        self.llm_calls = LlmCallService(session)
         self.router = RagRouter()
         self.reports = AuthorReportRepository(session)
 
@@ -87,8 +89,10 @@ class RAGEngine:
                     )
                 )
             context_str = "\n\n".join(context_parts)
-            answer = await self.llm.generate_rag_answer(query, context_str, content_type="generic")
-            return RagChatResponse(answer=answer, citations=citations)
+            answer_res = await self.llm.generate_rag_answer(query, context_str, content_type="generic")
+            if answer_res.call:
+                await self.llm_calls.record_call_safe(answer_res.call)
+            return RagChatResponse(answer=answer_res.answer, citations=citations)
 
         source_type = "summary_short" if route == "summary_short" else "summary_chunk"
         retrieval_tags = [] if source_type == "summary_short" else tags
@@ -99,6 +103,8 @@ class RAGEngine:
 
         context_str, citations = build_context_and_citations(items)
         content_type = self._resolve_content_type_from_docs(items)
-        answer = await self.llm.generate_rag_answer(query, context_str, content_type)
+        answer_res = await self.llm.generate_rag_answer(query, context_str, content_type)
+        if answer_res.call:
+            await self.llm_calls.record_call_safe(answer_res.call)
 
-        return RagChatResponse(answer=answer, citations=citations)
+        return RagChatResponse(answer=answer_res.answer, citations=citations)

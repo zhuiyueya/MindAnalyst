@@ -4,6 +4,7 @@ from typing import Any, Dict, List, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.llm.service import LLMService
+from src.services.llm_call_service import LlmCallService
 from src.core.config import settings
 from src.models.models import Author, ContentItem, Summary
 from src.repositories.summary_repo import SummaryRepository
@@ -15,6 +16,7 @@ class AuthorCategoryService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.llm = LLMService()
+        self.llm_calls = LlmCallService(session)
         self.summaries = SummaryRepository(session)
 
     async def generate_author_categories_and_tag(self, author_id: str) -> Dict[str, Any]:
@@ -59,46 +61,23 @@ class AuthorCategoryService:
         candidate_ids: List[str] = []
         for i in range(0, len(items), batch_size):
             batch = items[i:i + batch_size]
-            batch_result: Any = await self.llm.select_batch_candidates(batch)
-            if isinstance(batch_result, dict):
-                batch_result_dict = cast(Dict[str, Any], batch_result)
-                selected = batch_result_dict.get("selected_ids")
-                if isinstance(selected, list):
-                    selected_list = cast(List[Any], selected)
-                    candidate_ids.extend(
-                        [str(x) for x in selected_list if str(x).strip()]
-                    )
+            batch_result = await self.llm.select_batch_candidates(batch)
+            if batch_result.call:
+                await self.llm_calls.record_call_safe(batch_result.call)
+            if batch_result.selected_ids:
+                candidate_ids.extend(batch_result.selected_ids)
 
         candidate_ids_set = set(candidate_ids)
         candidate_items = [item for item in items if item["video_id"] in candidate_ids_set]
         if not candidate_items:
             candidate_items = items
 
-        final_result: Any = await self.llm.select_final_candidates(candidate_items)
-        final_ids_raw: Any = None
-        category_list_raw: Any = None
-        if isinstance(final_result, dict):
-            final_result_dict = cast(Dict[str, Any], final_result)
-            final_ids_raw = final_result_dict.get("selected_ids")
-            category_list_raw = final_result_dict.get("category_list")
+        final_result = await self.llm.select_final_candidates(candidate_items)
+        if final_result.call:
+            await self.llm_calls.record_call_safe(final_result.call)
 
-        final_ids: List[str]
-        if isinstance(final_ids_raw, list):
-            final_ids_list = cast(List[Any], final_ids_raw)
-            final_ids = [str(x) for x in final_ids_list if str(x).strip()]
-        else:
-            final_ids = [item["video_id"] for item in candidate_items][:20]
-
-        category_list: List[str]
-        if isinstance(category_list_raw, list):
-            category_list_list = cast(List[Any], category_list_raw)
-            category_list = [
-                str(x)
-                for x in category_list_list
-                if str(x).strip()
-            ]
-        else:
-            category_list = []
+        final_ids: List[str] = final_result.selected_ids or [item["video_id"] for item in candidate_items][:20]
+        category_list: List[str] = final_result.category_list
 
         final_ids_set = set(final_ids)
         final_items = [item for item in candidate_items if item["video_id"] in final_ids_set]
@@ -115,18 +94,11 @@ class AuthorCategoryService:
                 "summary_content": summary_obj.content
             })
 
-        author_category_result: Any = await self.llm.generate_author_categories(category_list, final_long_items)
-        final_categories: Any = None
-        if isinstance(author_category_result, dict):
-            author_category_result_dict = cast(Dict[str, Any], author_category_result)
-            final_categories = author_category_result_dict.get("category_list")
-        if isinstance(final_categories, list) and final_categories:
-            final_categories_list = cast(List[Any], final_categories)
-            category_list = [
-                str(x)
-                for x in final_categories_list
-                if str(x).strip()
-            ]
+        author_category_result = await self.llm.generate_author_categories(category_list, final_long_items)
+        if author_category_result.call:
+            await self.llm_calls.record_call_safe(author_category_result.call)
+        if author_category_result.category_list:
+            category_list = author_category_result.category_list
 
         author = await self.session.get(Author, author_id)
         if author:
@@ -144,13 +116,11 @@ class AuthorCategoryService:
                 continue
             if not summary.content:
                 continue
-            tag_result: Any = await self.llm.tag_video_category(category_list, {"summary_content": summary.content})
-            category: Any = None
-            if isinstance(tag_result, dict):
-                tag_result_dict = cast(Dict[str, Any], tag_result)
-                category = tag_result_dict.get("category")
-            if category:
-                summary.video_category = str(category)
+            tag_result = await self.llm.tag_video_category(category_list, {"summary_content": summary.content})
+            if tag_result.call:
+                await self.llm_calls.record_call_safe(tag_result.call)
+            if tag_result.category:
+                summary.video_category = str(tag_result.category)
                 self.session.add(summary)
                 await self.session.commit()
                 tagged += 1

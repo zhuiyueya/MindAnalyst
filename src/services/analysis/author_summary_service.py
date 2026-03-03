@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.adapters.llm.service import LLMService
+from src.services.llm_call_service import LlmCallService
 from src.models.models import Author, ContentItem, Segment, Summary
 from src.repositories.content_repo import ContentRepository
 from src.repositories.segment_repo import SegmentRepository
@@ -16,6 +17,7 @@ class AuthorSummaryService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.llm = LLMService()
+        self.llm_calls = LlmCallService(session)
         self.contents = ContentRepository(session)
         self.segments = SegmentRepository(session)
         self.summaries = SummaryRepository(session)
@@ -94,13 +96,15 @@ class AuthorSummaryService:
         if content.content_type:
             return content.content_type
 
-        classified = await self.llm.classify_content_type(full_text)
-        if classified:
-            content.content_type = classified
+        classified_res = await self.llm.classify_content_type(full_text)
+        if classified_res.call:
+            await self.llm_calls.record_call_safe(classified_res.call)
+        if classified_res.content_type:
+            content.content_type = classified_res.content_type
             content.content_type_source = "classifier"
             self.session.add(content)
             await self.session.commit()
-            return classified
+            return classified_res.content_type
 
         return "generic"
 
@@ -122,25 +126,23 @@ class AuthorSummaryService:
         content_type = await self._resolve_content_type(content, full_text)
 
         # Call LLM
-        result: Any = await self.llm.generate_summary(full_text, content_type)
-        
-        if "error" in result:
-            logger.warning(f"Summary generation failed for {content.title}: {result['error']}")
+        result = await self.llm.generate_summary(full_text, content_type)
+        if result.call:
+            await self.llm_calls.record_call_safe(result.call)
+        if result.call and result.call.status == "error":
+            logger.warning(f"Summary generation failed for {content.title}: {result.call.error_message}")
             return
 
-        raw_text = ""
-        if isinstance(result, dict):
-            result_dict = cast(Dict[str, Any], result)
-            raw_text = str(result_dict.get("raw_text") or "")
+        raw_text = str(result.raw_text or "")
 
         if existing_summary:
             logger.info(f"Updating existing summary for {content.title}")
             existing_summary.content = raw_text
-            existing_summary.json_data = cast(Dict[str, Any], result) if isinstance(result, dict) else {"raw": result}
+            existing_summary.json_data = {"raw_text": raw_text, "blocks": [b.model_dump() for b in result.blocks], "profile": result.profile, "content_type": result.content_type}
             self.session.add(existing_summary)
         else:
             # Save to Summary table
-            json_data = cast(Dict[str, Any], result) if isinstance(result, dict) else {"raw": result}
+            json_data = {"raw_text": raw_text, "blocks": [b.model_dump() for b in result.blocks], "profile": result.profile, "content_type": result.content_type}
             summary = Summary(
                 content_id=content.id,
                 summary_type="structured",
@@ -170,19 +172,14 @@ class AuthorSummaryService:
                 skipped += 1
                 continue
             try:
-                result: Any = await self.llm.generate_short_summary(summary.content, content.content_type)
-                if not isinstance(result, dict) or "error" in result:
+                result = await self.llm.generate_short_summary(summary.content, content.content_type)
+                if result.call:
+                    await self.llm_calls.record_call_safe(result.call)
+                if result.call and result.call.status == "error":
                     skipped += 1
                     continue
-                result_dict = cast(Dict[str, Any], result)
-                raw = result_dict.get("raw")
-                if raw is None:
-                    raw = result_dict
-                raw_dict: Dict[str, Any]
-                if isinstance(raw, dict):
-                    raw_dict = cast(Dict[str, Any], raw)
-                else:
-                    raw_dict = {"raw": raw}
+
+                raw_dict: Dict[str, Any] = result.raw if isinstance(result.raw, dict) else {"raw": result.raw}
                 summary.short_json = raw_dict
                 self.session.add(summary)
                 await self.session.commit()
