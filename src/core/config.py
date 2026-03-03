@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     OPENAI_MODEL: Optional[str] = None
     HF_ENDPOINT: Optional[str] = None
     EMBEDDING_MODEL_NAME: str = "paraphrase-multilingual-MiniLM-L12-v2" # or text-embedding-3-small
+    EMBEDDING_PROVIDER: str = "sentence_transformer"
+    EMBEDDING_DEVICE: Optional[str] = None
+    EMBEDDING_NORMALIZE: bool = True
+    EMBEDDING_BATCH_SIZE: int = 32
+    EMBEDDING_MAX_CHARS: int = 8000
     SUMMARY_PROMPT_PROFILE: str = "video_summary/v1"
     MODEL_CONFIG_PATH: str = "src/models/provider_models.yaml"
     CATEGORY_BATCH_SIZE: int = 500

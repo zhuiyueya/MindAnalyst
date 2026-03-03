@@ -3,7 +3,7 @@ import re
 from typing import Any, Dict, List, Tuple, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.adapters.embedding.provider import embed_text
+from src.adapters.embedding.service import EmbeddingService
 from src.models.models import ContentItem, RagIndexItem, Summary
 from src.repositories.rag_index_repo import RagIndexRepository
 
@@ -45,6 +45,7 @@ class RagIndexingService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.repo = RagIndexRepository(session)
+        self.embedding = EmbeddingService()
 
     async def reindex_author(self, author_id: str) -> Dict[str, Any]:
         rows = await self.repo.list_latest_structured_summaries_by_author(author_id)
@@ -95,7 +96,7 @@ class RagIndexingService:
                 skipped += 1
                 continue
             text_for_embedding = f"领域: {category}  | 内容: {text_raw}"
-            emb = embed_text(text_for_embedding)
+            emb = self.embedding.embed_text(text_for_embedding).values
             item = RagIndexItem(
                 source_type="summary_chunk",
                 author_id=content.author_id,
@@ -125,7 +126,7 @@ class RagIndexingService:
 
             text_raw = (short_summary + (f"\n关键词: {keywords_str}" if keywords_str else "")).strip()
             text_for_embedding = text_raw
-            emb = embed_text(text_for_embedding)
+            emb = self.embedding.embed_text(text_for_embedding).values
             item = RagIndexItem(
                 source_type="summary_short",
                 author_id=content.author_id,

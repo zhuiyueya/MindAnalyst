@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import col, select
 
-from src.adapters.embedding.provider import embed_text
+from src.adapters.embedding.service import EmbeddingService
 from src.models.models import ContentItem, RagIndexItem, Summary
 from src.rag.types import RagDoc
 
@@ -15,6 +15,7 @@ from src.rag.types import RagDoc
 class RagIndexRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+        self.embedding = EmbeddingService()
 
     async def delete_by_summary_id(self, summary_id: str) -> None:
         await self.session.execute(delete(RagIndexItem).where(col(RagIndexItem.summary_id) == summary_id))
@@ -51,7 +52,7 @@ class RagIndexRepository:
         tags = tags or []
         tags = [str(x).strip() for x in tags if str(x).strip()]
 
-        query_vec = embed_text(query)
+        query_vec = self.embedding.embed_text(query).values
 
         base = (
             select(RagIndexItem)
