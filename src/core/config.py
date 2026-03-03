@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
     MINIO_BUCKET_NAME: str = "mind-analyst-files"
     MINIO_PRESIGN_EXPIRES_S: int = 7 * 24 * 3600
+
+    BILIBILI_USER_AGENT: str = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    BILIBILI_HTTP_TIMEOUT_S: int = 20
+    BILIBILI_DOWNLOAD_DIR: str = "downloads"
+    BILIBILI_BROWSER_HEADLESS: bool = False
+    BILIBILI_BROWSER_SCROLL_TIMES: int = 3
+    BILIBILI_BROWSER_SCROLL_SLEEP_S: float = 1.0
     
     class Config:
         env_file = ".env"

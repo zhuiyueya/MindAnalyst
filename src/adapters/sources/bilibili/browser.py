@@ -4,6 +4,9 @@ from playwright.async_api import async_playwright, Browser, BrowserContext, Elem
 from typing import List, Optional, Sequence
 import logging
 
+from src.core.config import settings
+from src.adapters.sources.bilibili.types import AuthorProfile, AuthorVideosResult, VideoItem
+
 logger = logging.getLogger(__name__)
 
 
@@ -298,7 +301,11 @@ class BrowserCrawler:
                     logger.info(f"Scraping page {page_num}...")
 
                     # 滚动触发懒加载（ 3 次，每次 1 秒）
-                    await self._scroll_to_bottom(page, times=3, sleep_s=1)
+                    await self._scroll_to_bottom(
+                        page,
+                        times=settings.BILIBILI_BROWSER_SCROLL_TIMES,
+                        sleep_s=settings.BILIBILI_BROWSER_SCROLL_SLEEP_S,
+                    )
 
                     video_items = await self._select_video_items(page)
 
@@ -367,3 +374,55 @@ class BrowserCrawler:
             await self.browser.close()
         if self.playwright:
             await self.playwright.stop()
+
+
+class BrowserProvider:
+    async def fetch_author_and_videos(self, author_ref: str, limit: int = 0) -> AuthorVideosResult:
+        crawler = BrowserCrawler(headless=settings.BILIBILI_BROWSER_HEADLESS)
+        try:
+            scraped = await crawler.get_videos_from_page(author_ref, limit=limit)
+        finally:
+            try:
+                await crawler.close()
+            except Exception:
+                pass
+
+        parse_warnings: list[str] = []
+
+        author_mid = "0"
+        author_name = "Unknown Author"
+        author_avatar: Optional[str] = None
+        author_homepage: Optional[str] = None
+
+        if scraped.author is None:
+            parse_warnings.append("author_missing")
+        else:
+            author_mid = scraped.author.mid or "0"
+            author_name = scraped.author.name or "Unknown Author"
+            author_avatar = scraped.author.face or None
+            author_homepage = scraped.author.url or None
+
+        if not author_mid or author_mid == "0":
+            parse_warnings.append("author_mid_missing")
+        if author_name == "Unknown Author":
+            parse_warnings.append("author_name_unknown")
+        if not author_avatar:
+            parse_warnings.append("author_avatar_missing")
+
+        author = AuthorProfile(
+            external_id=str(author_mid),
+            name=str(author_name),
+            avatar_url=author_avatar,
+            homepage_url=author_homepage,
+        )
+
+        videos: list[VideoItem] = []
+        for v in scraped.videos or []:
+            bvid = (v.bvid or "").strip()
+            title = (v.title or "").strip()
+            url = (v.url or "").strip()
+            if not bvid or not title or not url:
+                continue
+            videos.append(VideoItem(bvid=bvid, title=title, url=url))
+
+        return AuthorVideosResult(author=author, videos=videos, source="browser", parse_warnings=parse_warnings)

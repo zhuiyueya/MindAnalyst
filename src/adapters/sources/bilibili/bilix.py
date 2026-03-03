@@ -7,6 +7,17 @@ from bilix.sites.bilibili import api
 import httpx
 import logging
 
+from src.core.config import settings
+from src.adapters.sources.bilibili.types import (
+    AuthorProfile,
+    AuthorVideosResult,
+    BilibiliAdapterError,
+    DownloadedAudio,
+    SubtitleLine,
+    VideoItem,
+    VideoMeta,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,13 +87,14 @@ _BilixSubtitleJsonRow = TypedDict(
 )
 
 class BilixCrawler:
-    def __init__(self, download_dir: str = "downloads"):
-        self.download_dir = download_dir
-        if not os.path.exists(download_dir):
-            os.makedirs(download_dir)
+    def __init__(self, download_dir: Optional[str] = None):
+        resolved_dir = download_dir or settings.BILIBILI_DOWNLOAD_DIR
+        self.download_dir = resolved_dir
+        if not os.path.exists(self.download_dir):
+            os.makedirs(self.download_dir)
         # We'll create a client for API calls
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": settings.BILIBILI_USER_AGENT,
             "Referer": "https://www.bilibili.com/"
         }
 
@@ -326,7 +338,118 @@ class BilixCrawler:
                     return os.path.join(self.download_dir, files[0])
                 
                 return None
-                
+
         except Exception as e:
             logger.error(f"Download audio failed for {bvid}: {e}")
             return None
+
+
+class BilixProvider:
+    def __init__(self):
+        self._crawler = BilixCrawler()
+
+    async def fetch_author_and_videos(self, author_ref: str, limit: int = 0) -> AuthorVideosResult:
+        try:
+            author = await self._crawler.get_author_info(author_ref)
+            videos = await self._crawler.get_videos(author_ref, limit=limit or 0)
+        except Exception as exc:
+            raise BilibiliAdapterError(
+                "Bilix fetch author/videos failed",
+                operation="fetch_author_and_videos",
+                ref=author_ref,
+                cause=exc,
+            ) from exc
+
+        parse_warnings: list[str] = []
+        mid = str(author.mid or "").strip()
+        if not mid:
+            mid = "0"
+            parse_warnings.append("author_mid_missing")
+
+        avatar_url = str(author.face or "").strip() or None
+        if not avatar_url:
+            parse_warnings.append("author_avatar_missing")
+
+        name = str(author.name or "").strip() or "Unknown Author"
+        if name == "Unknown Author":
+            parse_warnings.append("author_name_unknown")
+
+        profile = AuthorProfile(
+            external_id=mid,
+            name=name,
+            avatar_url=avatar_url,
+            homepage_url=f"https://space.bilibili.com/{mid}" if mid and mid != "0" else None,
+        )
+
+        items: list[VideoItem] = []
+        for v in videos:
+            bvid = str(getattr(v, "bvid", "") or "").strip()
+            if not bvid:
+                continue
+            title = str(getattr(v, "title", "") or "").strip() or "Unknown Title"
+            items.append(VideoItem(bvid=bvid, title=title, url=f"https://www.bilibili.com/video/{bvid}"))
+
+        return AuthorVideosResult(author=profile, videos=items, source="bilix_api", parse_warnings=parse_warnings)
+
+    async def fetch_video_meta(self, bvid: str, *, reuse_audio_only: bool = False) -> VideoMeta:
+        if reuse_audio_only:
+            return VideoMeta(bvid=bvid, parse_warnings=["reuse_audio_only_skip_meta"])
+
+        try:
+            detail = await self._crawler.get_video_info(bvid)
+        except Exception as exc:
+            raise BilibiliAdapterError(
+                "Bilix fetch video meta failed",
+                operation="fetch_video_meta",
+                ref=bvid,
+                cause=exc,
+            ) from exc
+
+        return VideoMeta(
+            bvid=bvid,
+            title=str(detail.title or "").strip() or None,
+            desc=str(detail.desc or "").strip() or None,
+            duration_s=int(detail.duration) if isinstance(detail.duration, int) and detail.duration > 0 else None,
+            cid=int(detail.cid) if isinstance(detail.cid, int) and detail.cid > 0 else None,
+            parse_warnings=[],
+        )
+
+    async def fetch_subtitles(self, bvid: str, cid: int) -> list[SubtitleLine]:
+        if not cid:
+            return []
+        try:
+            raw = await self._crawler.get_subtitle(bvid, cid)
+        except Exception as exc:
+            raise BilibiliAdapterError(
+                "Bilix fetch subtitles failed",
+                operation="fetch_subtitles",
+                ref=bvid,
+                cause=exc,
+            ) from exc
+
+        items: list[SubtitleLine] = []
+        for row in raw:
+            text = str(getattr(row, "content", "") or "").strip()
+            if not text:
+                continue
+            start = getattr(row, "start_s", None)
+            end = getattr(row, "end_s", None)
+            if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+                continue
+            items.append(SubtitleLine(start_s=float(start), end_s=float(end), text=text))
+        return items
+
+    async def download_audio(self, bvid: str) -> Optional[DownloadedAudio]:
+        try:
+            path = await self._crawler.download_audio(bvid)
+        except Exception as exc:
+            raise BilibiliAdapterError(
+                "Bilix download audio failed",
+                operation="download_audio",
+                ref=bvid,
+                cause=exc,
+            ) from exc
+
+        if not path:
+            return None
+        return DownloadedAudio(local_path=str(path), bvid=bvid, parse_warnings=[])

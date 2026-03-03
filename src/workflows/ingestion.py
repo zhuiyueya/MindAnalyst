@@ -9,10 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import select
 from src.models.models import Author, ContentItem, Segment
-from src.adapters.sources.bilibili.bilix import BilixCrawler
-from src.adapters.sources.bilibili.browser import BrowserCrawler, AuthorInfo, VideoInfo, ScrapePageResult
+from src.adapters.sources.bilibili.service import BilibiliSourceService
+from src.adapters.sources.bilibili.types import AuthorProfile, VideoItem
 from src.adapters.asr.service import ASRService, AsrTranscription
 from src.adapters.storage.service import StorageService
+from src.core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -47,73 +48,18 @@ class AudioContext:
 class IngestionWorkflow:
     def __init__(self, session: AsyncSession):
         self.session: AsyncSession = session
-        self.crawler: BilixCrawler = BilixCrawler()
-        self.browser_crawler: Optional[BrowserCrawler] = None  # Lazy init
+        self.bilibili: BilibiliSourceService = BilibiliSourceService()
         self.asr: ASRService = ASRService()
         self.storage: StorageService = StorageService()  # MinIO
 
-    async def _scrape_from_browser(self, url: str, limit: int) -> Optional[ScrapePageResult]:
-        """
-        使用 BrowserCrawler 爬取页面数据
-        返回 (videos, author_data) 或 None（失败时）
-        """
-        if not self.browser_crawler:
-            self.browser_crawler = BrowserCrawler(headless=False)
-
-        try:
-            return await self.browser_crawler.get_videos_from_page(url, limit=limit)
-        except Exception as e:
-            logger.error(f"Browser crawler failed: {e}")
-            return None
-        finally:
-            # Close browser when done
-            if self.browser_crawler:
-                await self.browser_crawler.close()
-                self.browser_crawler = None
-
-    async def _fetch_author_with_fallback(
-        self,
-        author_data: Optional[AuthorInfo],
-        first_video: VideoInfo
-    ) -> AuthorInfo:
-        """
-        获取作者信息，如果失败则使用 bilix API 作为 fallback
-        始终返回有效的 AuthorInfo
-        """
-        if author_data and author_data.mid and author_data.face:
-            return author_data
-
-        logger.info(f"Fetching author info for BVID: {first_video.bvid}")
-        try:
-            bilix_author = await self.crawler.get_author_info(first_video.bvid)
-            mid = str(bilix_author.mid)
-            return AuthorInfo(
-                mid=mid,
-                name=bilix_author.name,
-                face=bilix_author.face,
-                url=f"https://space.bilibili.com/{mid}"
-            )
-        except Exception as e:
-            logger.warning(f"Bilix fallback failed: {e}")
-            # 返回默认作者数据
-            return AuthorInfo(
-                mid="0",
-                name="Unknown Author",
-                face="",
-                url=""
-            )
-
-    async def _get_or_create_author_in_db(
-        self,
-        author_data: AuthorInfo
-    ) -> Author:
+    async def _get_or_create_author_in_db(self, author_data: AuthorProfile) -> Author:
         """
         在数据库中获取或创建作者
         处理 avatar 存储、创建、更新等所有数据库操作
         如果发生异常，返回 dummy author
         """
         try:
-            mid = author_data.mid
+            mid = author_data.external_id
 
             # 查询现有作者
             stmt = select(Author).where(Author.external_id == mid)
@@ -122,9 +68,9 @@ class IngestionWorkflow:
 
             # 存储 avatar
             stored_avatar_url: Optional[str] = None
-            if author_data.face:
-                if not author or not author.avatar_url or author.avatar_url == author_data.face:
-                    stored_avatar_url = await self._store_author_avatar(author_data.face, mid)
+            if author_data.avatar_url:
+                if not author or not author.avatar_url or author.avatar_url == author_data.avatar_url:
+                    stored_avatar_url = await self._store_author_avatar(author_data.avatar_url, mid)
 
             if not author:
                 # 创建新作者
@@ -132,8 +78,8 @@ class IngestionWorkflow:
                     platform="bilibili",
                     external_id=mid,
                     name=author_data.name,
-                    homepage_url=author_data.url,
-                    avatar_url=stored_avatar_url or author_data.face
+                    homepage_url=author_data.homepage_url,
+                    avatar_url=stored_avatar_url or author_data.avatar_url
                 )
                 self.session.add(author)
                 await self.session.commit()
@@ -145,8 +91,8 @@ class IngestionWorkflow:
                     author.name = author_data.name
                 if stored_avatar_url:
                     author.avatar_url = stored_avatar_url
-                elif not author.avatar_url and author_data.face:
-                    author.avatar_url = author_data.face
+                elif not author.avatar_url and author_data.avatar_url:
+                    author.avatar_url = author_data.avatar_url
                 self.session.add(author)
                 await self.session.commit()
                 logger.info(f"Updated author info: {author.name}")
@@ -178,25 +124,25 @@ class IngestionWorkflow:
 
         return author
 
-    async def _correct_video_title(self, video: VideoInfo) -> VideoInfo:
+    async def _correct_video_title(self, video: VideoItem) -> VideoItem:
         """
         检查视频标题是否为 unknown，如果是则尝试从 API 获取正确标题。
-        返回修正后的 VideoInfo。
+        返回修正后的视频信息。
         """
         try:
-            v_info_meta = await self.crawler.get_video_info(video.bvid)
-            if v_info_meta.title and v_info_meta.title != "Unknown Title":
-                if video.title != v_info_meta.title:
+            meta = await self.bilibili.fetch_video_meta(video.bvid)
+            if meta.title and meta.title != "Unknown Title":
+                if video.title != meta.title:
                     logger.info(
-                        f"Correcting title for {video.bvid}: '{video.title}' -> '{v_info_meta.title}'"
+                        f"Correcting title for {video.bvid}: '{video.title}' -> '{meta.title}'"
                     )
-                    return VideoInfo(bvid=video.bvid, title=v_info_meta.title, url=video.url)
+                    return VideoItem(bvid=video.bvid, title=meta.title, url=video.url)
         except Exception as e:
             logger.warning(f"Failed to fetch metadata for {video.bvid}: {e}")
 
         return video
 
-    async def _ingest_single_video(self, video: VideoInfo, author: Author) -> None:
+    async def _ingest_single_video(self, video: VideoItem, author: Author) -> None:
         """处理单个视频：创建 ContentItem 并调用 process_content"""
         bvid = video.bvid
 
@@ -234,7 +180,7 @@ class IngestionWorkflow:
                     f"Content already exists (quality={content.content_quality}): {bvid} - {video.title}, skipping."
                 )
 
-    async def _ingest_videos(self, author: Author, videos: List[VideoInfo]) -> None:
+    async def _ingest_videos(self, author: Author, videos: List[VideoItem]) -> None:
         """处理视频列表：纠正标题并逐个处理"""
         for video in videos:
             corrected_video = await self._correct_video_title(video)
@@ -278,62 +224,24 @@ class IngestionWorkflow:
 
     async def ingest_from_browser(self, url: str, limit: int = 0) -> None:
         """
-        使用 BrowserCrawler 从页面获取视频并采集
+        从页面获取视频并采集
         limit: 最大处理视频数
         """
-        # 1. 爬取数据
-        scrape_result = await self._scrape_from_browser(url, limit)
-        if scrape_result is None:
-            return
-
-        videos: List[VideoInfo] = scrape_result.videos
-        if not videos:
+        result = await self.bilibili.fetch_author_and_videos(url, limit=limit)
+        if not result.videos:
             logger.warning(f"No videos found on {url}")
             return
 
-        author_data: Optional[AuthorInfo] = scrape_result.author
-
-        # 2. 处理作者（获取 & 创建）
-        complete_author_data = await self._fetch_author_with_fallback(author_data, videos[0])
-        author = await self._get_or_create_author_in_db(complete_author_data)
-
-        # 3. 处理视频列表
-        await self._ingest_videos(author, videos)
+        author = await self._get_or_create_author_in_db(result.author)
+        await self._ingest_videos(author, result.videos)
 
         # 作者报告生成已改为手动执行。
 
     async def ingest_author(self, mid_or_url: str, limit: int = 10) -> None:
         """采集作者及其最近的视频"""
-        # 1. 获取作者信息
-        info = await self.crawler.get_author_info(mid_or_url)
-        mid = str(info.mid)
-
-        # 构建 AuthorInfo
-        author_data = AuthorInfo(
-            mid=mid,
-            name=info.name,
-            face=info.face,
-            url=f"https://space.bilibili.com/{mid}",
-        )
-
-        # 2. 处理作者（获取/创建）
-        author = await self._get_or_create_author_in_db(author_data)
-
-        # 3. 获取视频列表
-        videos_raw = await self.crawler.get_videos(mid_or_url, limit=limit)
-
-        # 转换为 VideoInfo 格式
-        videos: List[VideoInfo] = [
-            VideoInfo(
-                bvid=v.bvid,
-                title=v.title,
-                url=f"https://www.bilibili.com/video/{v.bvid}",
-            )
-            for v in videos_raw
-        ]
-
-        # 4. 处理视频列表
-        await self._ingest_videos(author, videos)
+        result = await self.bilibili.fetch_author_and_videos(mid_or_url, limit=limit)
+        author = await self._get_or_create_author_in_db(result.author)
+        await self._ingest_videos(author, result.videos)
 
         # 作者报告生成已改为手动执行。
 
@@ -369,10 +277,10 @@ class IngestionWorkflow:
         if reuse_audio_only:
             return VideoMeta(duration=content.duration or 60, desc="", cid=None)
 
-        v_info = await self.crawler.get_video_info(content.external_id)
-        duration = v_info.duration if v_info.duration else (content.duration or 60)
-        desc = v_info.desc
-        cid: Optional[int] = v_info.cid if v_info.cid else None
+        meta = await self.bilibili.fetch_video_meta(content.external_id)
+        duration = meta.duration_s if meta.duration_s else (content.duration or 60)
+        desc = meta.desc or ""
+        cid: Optional[int] = meta.cid if meta.cid else None
         return VideoMeta(duration=duration, desc=desc, cid=cid)
 
     async def _fetch_subtitles_with_fallback(
@@ -399,13 +307,13 @@ class IngestionWorkflow:
             return []
 
         try:
-            raw_subs = await self.crawler.get_subtitle(content.external_id, video_meta.cid)
+            subs = await self.bilibili.fetch_subtitles(content.external_id, video_meta.cid)
         except Exception:
             return []
 
         items: List[SubtitleItem] = []
-        for sub in raw_subs:
-            text_clean = sub.content.strip()
+        for sub in subs:
+            text_clean = sub.text.strip()
             if not text_clean:
                 continue
             items.append(SubtitleItem(start_s=sub.start_s, end_s=sub.end_s, content=text_clean))
@@ -446,7 +354,7 @@ class IngestionWorkflow:
         if reuse_object is not None:
             reuse_object_name = reuse_object.object_name
             local_name = os.path.basename(reuse_object_name)
-            local_path = os.path.join(self.crawler.download_dir, local_name)
+            local_path = os.path.join(settings.BILIBILI_DOWNLOAD_DIR, local_name)
             try:
                 self.storage.get_to_file(reuse_object, local_path)
                 audio_path = local_path
@@ -459,7 +367,8 @@ class IngestionWorkflow:
             return None
 
         if not audio_path:
-            audio_path = await self.crawler.download_audio(content.external_id)
+            audio = await self.bilibili.download_audio(content.external_id)
+            audio_path = audio.local_path if audio else None
 
         if not audio_path:
             return None
