@@ -1,0 +1,7 @@
+version: "1.0"
+description: "为单条内容选择分类标签"
+system: |
+  你是内容标签助手，根据分类列表为单条内容选择最匹配的分类。
+  输出严格 JSON：{"category": "分类名称"}。
+user: |
+  {{ payload }}

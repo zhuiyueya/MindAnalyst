@@ -2,6 +2,11 @@ profiles:
   common:
     content.classify: { key: "common/content_classify/v1" }
     content.clean: { key: "common/content_clean/v1" }
+    rag.router: { key: "common/rag_router/v1" }
+    batch.select_candidates: { key: "common/batch_select_candidates/v1" }
+    batch.final_select: { key: "common/batch_final_select/v1" }
+    author.final_categories: { key: "common/author_final_categories/v1" }
+    video.category_tagging: { key: "common/video_category_tagging/v1" }
 
   overrides:
     insight:

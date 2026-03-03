@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 class LLMService:
     def __init__(self):
         self._clients: Dict[str, AsyncOpenAI] = {}
-        self.default_model_name = settings.OPENAI_MODEL or "deepseek-ai/DeepSeek-V3.2"
         self.prompt_manager = PromptManager()
         self.prompt_registry = PromptRegistry()
         self.model_registry = ModelProviderRegistry()
@@ -189,25 +188,28 @@ class LLMService:
     ) -> tuple[Optional[AsyncOpenAI], str, Optional[str], Optional[str]]:
         model_id = self.model_registry.get_scene_model_id(scene)
         model_config = self.model_registry.get_model_config(model_id)
-        provider_name: Optional[str] = None
-        model_name = self.default_model_name
-        base_url: Optional[str] = settings.OPENAI_BASE_URL
-        api_key: Optional[str] = settings.OPENAI_API_KEY
-        api_key_env: Optional[str] = None
+        if not model_id or not model_config:
+            logger.warning("No model configured for scene=%s", scene)
+            return None, "", model_id, None
 
-        if model_config:
-            provider_name = model_config.get("provider")
-            model_name = model_config.get("model_name") or model_name
-            provider_config = self.model_registry.get_provider_config(provider_name) or {}
-            base_url = provider_config.get("base_url") or base_url
-            api_key_env = provider_config.get("api_key_env")
-            if api_key_env:
-                api_key = os.getenv(api_key_env)
-            if not api_key:
-                api_key = settings.OPENAI_API_KEY
+        provider_name: Optional[str] = model_config.get("provider")
+        model_name = str(model_config.get("model_name") or "").strip()
+        if not provider_name or not model_name:
+            logger.warning("Invalid model config for scene=%s model_id=%s", scene, model_id)
+            return None, model_name, model_id, provider_name
 
-        if not api_key:
-            logger.warning("LLM API key missing for scene=%s", scene)
+        provider_config = self.model_registry.get_provider_config(provider_name) or {}
+        base_url = provider_config.get("base_url")
+        api_key_env = provider_config.get("api_key_env")
+        api_key: Optional[str] = os.getenv(api_key_env) if isinstance(api_key_env, str) and api_key_env else None
+
+        if not base_url or not api_key:
+            logger.warning(
+                "LLM provider config missing (base_url/api_key) for scene=%s provider=%s model_id=%s",
+                scene,
+                provider_name,
+                model_id,
+            )
             return None, model_name, model_id, provider_name
 
         cache_key = f"{provider_name or 'default'}::{base_url or ''}::{api_key_env or 'default'}"
@@ -695,24 +697,44 @@ class LLMService:
             )
             return RerankResult(indices=list(range(min(len(documents), top_n))), call=call)
 
-    async def classify_rag_intent(self, query: str, prompt: str) -> RagIntentResult:
+    async def classify_rag_intent(self, query: str) -> RagIntentResult:
         """Classify query intent for RAG routing.
 
         Returns a dict like: {"route": "author_report"|"summary_chunk"|"summary_short", "tags": [...], "query": "..."}
         """
-        client, model_name, model_id, provider = self._get_client_for_scene("rag.rerank")
-        if not client:
-            return RagIntentResult(route="summary_chunk", tags=[], query=query, raw={}, call=None)
+        profile_key = self.prompt_registry.get_prompt_key("rag.router", None, require_override=False)
+        prompts = self.prompt_manager.get_prompt(profile_key or "", query=query)
 
+        client, model_name, model_id, provider = self._get_client_for_scene("rag.router")
         request_meta = {"query_chars": len(query)}
+        if not client:
+            call = self._build_call_record(
+                task_type="rag.router",
+                content_type=None,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
+                model=model_name or None,
+                request_meta=self._build_request_meta({**request_meta, "missing_client": True}, model_id, provider),
+                status="error",
+                error_message="llm_client_not_configured",
+            )
+            return RagIntentResult(
+                route="summary_chunk",
+                tags=[],
+                query=query,
+                raw={"route": "summary_chunk", "tags": [], "query": query, "error": "llm_client_not_configured"},
+                call=call,
+            )
+
         content = None
         try:
             response, content = await self._chat_completion(
                 client=client,
                 model_name=model_name,
                 messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": query},
+                    {"role": "system", "content": prompts["system"]},
+                    {"role": "user", "content": prompts["user"]},
                 ],
                 require_json=True,
             )
@@ -733,9 +755,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="rag.router",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=query,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
                 model=getattr(response, "model", model_name),
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
@@ -749,16 +771,22 @@ class LLMService:
             call = self._build_call_record(
                 task_type="rag.router",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=query,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
                 model=model_name,
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
                 status="error",
                 error_message=str(e),
             )
-            return RagIntentResult(route="summary_chunk", tags=[], query=query, raw={"error": str(e)}, call=call)
+            return RagIntentResult(
+                route="summary_chunk",
+                tags=[],
+                query=query,
+                raw={"route": "summary_chunk", "tags": [], "query": query, "error": str(e)},
+                call=call,
+            )
 
     async def generate_rag_answer(self, query: str, context_str: str, content_type: Optional[str]) -> RagAnswerResult:
         resolved_type = content_type or "generic"
@@ -770,10 +798,18 @@ class LLMService:
         prompts = self.prompt_manager.get_prompt(profile_key, query=query, context_str=context_str)
         client, model_name, model_id, provider = self._get_client_for_scene("rag.answer")
         if not client:
-            return RagAnswerResult(
-                answer="【模拟回答】基于片段 [1]，作者提到了相关概念。\n(请配置 OPENAI_API_KEY 以启用真实 LLM 回答)",
-                call=None,
+            call = self._build_call_record(
+                task_type="rag.answer",
+                content_type=resolved_type,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
+                model=model_name or None,
+                request_meta=self._build_request_meta({"missing_client": True}, model_id, provider),
+                status="error",
+                error_message="llm_client_not_configured",
             )
+            return RagAnswerResult(answer="", call=call)
         request_meta = {
             "query_chars": len(query),
             "context_chars": len(context_str)
@@ -820,28 +856,36 @@ class LLMService:
 
     async def select_batch_candidates(self, items: List[Dict[str, Any]], top_min: int = 5, top_max: int = 8) -> BatchSelectCandidatesResult:
         client, model_name, model_id, provider = self._get_client_for_scene("batch.select_candidates")
-        if not client:
-            return BatchSelectCandidatesResult(selected_ids=[], call=None)
-
-        prompt = (
-            "你是内容分析助手，请从给定内容中挑选最有深度的条目。\n"
-            "输入是一组 {video_id, summary, keywords}。\n"
-            f"输出 JSON：{{\"selected_ids\": [\"id1\", ...]}}，数量介于 {top_min}-{top_max}。"
-        )
+        profile_key = self.prompt_registry.get_prompt_key("batch.select_candidates", None, require_override=False)
         payload = json.dumps(items, ensure_ascii=False)
+        prompts = self.prompt_manager.get_prompt(profile_key or "", payload=payload, top_min=top_min, top_max=top_max)
         request_meta = {
             "item_count": len(items),
             "top_min": top_min,
             "top_max": top_max
         }
+        if not client:
+            call = self._build_call_record(
+                task_type="batch.select_candidates",
+                content_type=None,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
+                model=model_name or None,
+                request_meta=self._build_request_meta({**request_meta, "missing_client": True}, model_id, provider),
+                status="error",
+                error_message="llm_client_not_configured",
+            )
+            return BatchSelectCandidatesResult(selected_ids=[], raw={"error": "llm_client_not_configured"}, call=call)
+
         content = None
         try:
             response, content = await self._chat_completion(
                 client=client,
                 model_name=model_name,
                 messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": payload},
+                    {"role": "system", "content": prompts["system"]},
+                    {"role": "user", "content": prompts["user"]},
                 ],
                 require_json=True,
             )
@@ -857,9 +901,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="batch.select_candidates",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=payload,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
                 model=getattr(response, "model", model_name),
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
@@ -873,9 +917,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="batch.select_candidates",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=payload,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
                 model=model_name,
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
@@ -886,23 +930,32 @@ class LLMService:
 
     async def select_final_candidates(self, items: List[Dict[str, Any]], top_n: int = 20) -> FinalSelectCandidatesResult:
         client, model_name, model_id, provider = self._get_client_for_scene("batch.final_select")
-        if not client:
-            return FinalSelectCandidatesResult(selected_ids=[], category_list=[], raw={}, call=None)
-
-        prompt = (
-            "你是内容策展助手，请根据摘要挑选最具代表性的内容。\n"
-            f"输出 JSON：{{\"selected_ids\": [\"id1\", ...], \"category_list\": [\"分类1\", ...]}}，selected_ids 数量为 {top_n}。"
-        )
+        profile_key = self.prompt_registry.get_prompt_key("batch.final_select", None, require_override=False)
         payload = json.dumps(items, ensure_ascii=False)
+        prompts = self.prompt_manager.get_prompt(profile_key or "", payload=payload, top_n=top_n)
         request_meta = {"item_count": len(items), "top_n": top_n}
+        if not client:
+            call = self._build_call_record(
+                task_type="batch.final_select",
+                content_type=None,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
+                model=model_name or None,
+                request_meta=self._build_request_meta({**request_meta, "missing_client": True}, model_id, provider),
+                status="error",
+                error_message="llm_client_not_configured",
+            )
+            return FinalSelectCandidatesResult(selected_ids=[], category_list=[], raw={"error": "llm_client_not_configured"}, call=call)
+
         content = None
         try:
             response, content = await self._chat_completion(
                 client=client,
                 model_name=model_name,
                 messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": payload},
+                    {"role": "system", "content": prompts["system"]},
+                    {"role": "user", "content": prompts["user"]},
                 ],
                 require_json=True,
             )
@@ -925,9 +978,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="batch.final_select",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=payload,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"] ,
                 model=getattr(response, "model", model_name),
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
@@ -946,9 +999,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="batch.final_select",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=payload,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
                 model=model_name,
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
@@ -959,23 +1012,32 @@ class LLMService:
 
     async def generate_author_categories(self, category_list: List[str], summaries: List[Dict[str, Any]]) -> AuthorCategoriesResult:
         client, model_name, model_id, provider = self._get_client_for_scene("author.final_categories")
-        if not client:
-            return AuthorCategoriesResult(category_list=category_list, raw={"category_list": category_list}, call=None)
-
-        prompt = (
-            "你是内容分类助手，请根据候选分类与代表摘要生成最终分类。\n"
-            "输出 JSON：{\"category_list\": [\"分类1\", ...]}。"
-        )
+        profile_key = self.prompt_registry.get_prompt_key("author.final_categories", None, require_override=False)
         payload = json.dumps({"category_list": category_list, "summaries": summaries}, ensure_ascii=False)
+        prompts = self.prompt_manager.get_prompt(profile_key or "", payload=payload)
         request_meta = {"candidate_category_count": len(category_list), "summary_count": len(summaries)}
+        if not client:
+            call = self._build_call_record(
+                task_type="author.final_categories",
+                content_type=None,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
+                model=model_name or None,
+                request_meta=self._build_request_meta({**request_meta, "missing_client": True}, model_id, provider),
+                status="error",
+                error_message="llm_client_not_configured",
+            )
+            return AuthorCategoriesResult(category_list=category_list, raw={"error": "llm_client_not_configured"}, call=call)
+
         content = None
         try:
             response, content = await self._chat_completion(
                 client=client,
                 model_name=model_name,
                 messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": payload},
+                    {"role": "system", "content": prompts["system"]},
+                    {"role": "user", "content": prompts["user"]},
                 ],
                 require_json=True,
             )
@@ -991,9 +1053,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="author.final_categories",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=payload,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
                 model=getattr(response, "model", model_name),
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
@@ -1011,9 +1073,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="author.final_categories",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=payload,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
                 model=model_name,
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
@@ -1024,23 +1086,31 @@ class LLMService:
 
     async def tag_video_category(self, category_list: List[str], summary: Dict[str, Any]) -> TagVideoCategoryResult:
         client, model_name, model_id, provider = self._get_client_for_scene("video.category_tagging")
-        if not client:
-            return TagVideoCategoryResult(category=None, raw={}, call=None)
-
-        prompt = (
-            "你是内容标签助手，根据分类列表为单条内容选择最匹配的分类。\n"
-            "输出 JSON：{\"category\": \"分类名称\"}。"
-        )
+        profile_key = self.prompt_registry.get_prompt_key("video.category_tagging", None, require_override=False)
         payload = json.dumps({"category_list": category_list, "summary": summary}, ensure_ascii=False)
+        prompts = self.prompt_manager.get_prompt(profile_key or "", payload=payload)
         request_meta = {"category_count": len(category_list)}
+        if not client:
+            call = self._build_call_record(
+                task_type="video.category_tagging",
+                content_type=None,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
+                model=model_name or None,
+                request_meta=self._build_request_meta({**request_meta, "missing_client": True}, model_id, provider),
+                status="error",
+                error_message="llm_client_not_configured",
+            )
+            return TagVideoCategoryResult(category=None, raw={"error": "llm_client_not_configured"}, call=call)
         content = None
         try:
             response, content = await self._chat_completion(
                 client=client,
                 model_name=model_name,
                 messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": payload},
+                    {"role": "system", "content": prompts["system"]},
+                    {"role": "user", "content": prompts["user"]},
                 ],
                 require_json=True,
             )
@@ -1050,9 +1120,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="video.category_tagging",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=payload,
+                profile_key=profile_key,
+                system_prompt=prompts["system"],
+                user_prompt=prompts["user"],
                 model=getattr(response, "model", model_name),
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,
@@ -1066,9 +1136,9 @@ class LLMService:
             call = self._build_call_record(
                 task_type="video.category_tagging",
                 content_type=None,
-                profile_key=None,
-                system_prompt=prompt,
-                user_prompt=payload,
+                profile_key=profile_key,
+                system_prompt=prompts.get("system", ""),
+                user_prompt=prompts.get("user", ""),
                 model=model_name,
                 request_meta=self._build_request_meta(request_meta, model_id, provider),
                 response_text=content,

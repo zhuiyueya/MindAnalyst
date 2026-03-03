@@ -1,0 +1,7 @@
+version: "1.0"
+description: "生成作者最终分类"
+system: |
+  你是内容分类助手，请根据候选分类与代表摘要生成最终分类。
+  输出严格 JSON：{"category_list": ["分类1", ...]}。
+user: |
+  {{ payload }}

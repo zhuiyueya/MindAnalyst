@@ -21,17 +21,6 @@ class RagRouter:
           "query": "..."   # optional rewritten query
         }
         """
-        prompt = (
-            "你是检索路由助手。根据用户问题，决定检索策略。\n"
-            "可选 route: author_report / summary_chunk / summary_short\n"
-            "规则：\n"
-            "- 如果用户在问‘某作者是谁/核心思想/体系/理念/总结’，优先 author_report（需要 author_id 才可用）。\n"
-            "- 如果用户在问‘怎么办/方法/步骤/建议/实操’，使用 summary_chunk，并优先 tags 包含 实操。\n"
-            "- 如果用户在问‘观点/认知/金句/洞见/打破认知’，使用 summary_chunk，并 tags 包含 观点、金句（按需）。\n"
-            "- 如果用户在问‘有没有聊过某话题/提到过XXX吗’，使用 summary_short。\n"
-            "输出严格 JSON：{\"route\":..., \"tags\":[...], \"query\":...}。tags 可为空数组。query 可原样返回。"
-        )
-
         normalized = (query or "").strip()
         if normalized:
             # Explicit tag forcing syntax (frontend test UI)
@@ -56,7 +45,7 @@ class RagRouter:
                 return {"route": "summary_chunk", "tags": ["观点", "金句"], "query": normalized}
 
         try:
-            intent = await self.llm.classify_rag_intent(query=query, prompt=prompt)
+            intent = await self.llm.classify_rag_intent(query=query)
         except Exception as e:
             logger.warning("RAG router failed, fallback to summary_chunk: %s", e)
             intent = None
