@@ -1,3 +1,111 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --color-primary: #ccff00;
+  --color-secondary: #ff3366;
+  --color-tertiary: #00f0ff;
+  --color-background: #09090b;
+  --color-surface: #18181b;
+  --color-border: #27272a;
+  --color-text-primary: #e4e4e7;
+  --color-text-secondary: #a1a1aa;
+}
+
+body {
+  font-family: 'IBM Plex Mono', monospace;
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  /* Optional: subtle grid overlay */
+  background-image: linear-gradient(var(--color-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: -1px -1px;
+}
+
+/* Headings use Space Grotesk */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Custom Selection Color */
+::selection {
+  background-color: var(--color-primary);
+  color: var(--color-background);
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+  border-left: 1px solid var(--color-border);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border: 1px solid var(--color-background);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+
+/* Utility Classes for Terminal Look */
+.terminal-card {
+  @apply border border-border bg-surface p-6 relative overflow-hidden;
+}
+
+.terminal-card::before {
+  content: '';
+  @apply absolute top-0 left-0 w-2 h-2 border-t border-l border-primary;
+}
+
+.terminal-card::after {
+  content: '';
+  @apply absolute bottom-0 right-0 w-2 h-2 border-b border-r border-primary;
+}
+
+.terminal-input {
+  @apply bg-transparent border-b border-border text-primary font-mono focus:outline-none focus:border-primary w-full py-2 placeholder-gray-600;
+}
+
+.terminal-button {
+  @apply border border-primary text-primary px-4 py-2 hover:bg-primary hover:text-background transition-colors duration-0 uppercase text-sm tracking-wider font-bold;
+}
+
+.terminal-button-secondary {
+  @apply border border-secondary text-secondary px-4 py-2 hover:bg-secondary hover:text-white transition-colors duration-0 uppercase text-sm tracking-wider font-bold;
+}
+
+/* Data Table Styling */
+.data-table {
+  @apply w-full border-collapse text-left;
+}
+
+.data-table th {
+  @apply border-b border-border py-3 px-4 text-xs uppercase tracking-wider text-text-secondary font-normal;
+}
+
+.data-table td {
+  @apply border-b border-border py-3 px-4 text-sm text-text-primary;
+}
+
+.data-table tr:hover td {
+  @apply bg-primary/10 text-primary;
+}
+
+/* Blink Animation */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}

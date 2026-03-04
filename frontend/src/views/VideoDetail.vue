@@ -150,161 +150,168 @@ const formatTime = (ms) => {
 </script>
 
 <template>
-  <div v-if="loading" class="text-center py-10">{{ t('common.loading') }}</div>
+  <div v-if="loading" class="text-center py-20 font-mono text-primary animate-pulse">
+    > LOADING_MEDIA_DATA...
+  </div>
   <div v-else class="space-y-6">
     <!-- Header -->
-    <div class="bg-white shadow rounded-lg p-6">
-      <h2 class="text-2xl font-bold text-gray-900">{{ video.title }}</h2>
-      <div class="mt-2 flex items-center space-x-4 text-sm text-gray-500">
-        <span>{{ formatDate(video.published_at) }}</span>
-        <span>{{ t('common.contentType') }}: {{ video.content_type || 'generic' }}</span>
-        <a :href="video.url" target="_blank" class="text-indigo-600 hover:underline">{{ t('common.originalLink') }}</a>
+    <div class="terminal-card">
+      <div class="flex flex-col md:flex-row justify-between items-start gap-4">
+        <div>
+          <h2 class="text-2xl font-bold text-text-primary mb-2 font-sans tracking-tight">{{ video.title }}</h2>
+          <div class="flex flex-wrap items-center gap-4 text-xs font-mono text-text-secondary">
+             <span>PUBLISHED: <span class="text-white">{{ formatDate(video.published_at) }}</span></span>
+             <span>TYPE: <span class="text-white">{{ video.content_type || 'GENERIC' }}</span></span>
+             <a :href="video.url" target="_blank" class="text-tertiary hover:underline uppercase">[OPEN_SOURCE]</a>
+          </div>
+        </div>
+        
+         <div class="flex flex-wrap gap-2">
+            <span :class="video.asr_status === 'ready' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
+              ASR: {{ statusText(video.asr_status) }}
+            </span>
+            <span :class="video.summary_status === 'ready' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
+              SUM: {{ statusText(video.summary_status) }}
+            </span>
+            <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
+              QUAL: {{ qualityText(video.content_quality) }}
+            </span>
+             <span v-if="summary && summary.video_category" class="text-tertiary text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
+              CAT: {{ summary.video_category }}
+            </span>
+         </div>
       </div>
-      <div class="mt-3 flex flex-wrap gap-2 text-xs">
-        <span :class="video.asr_status === 'ready'
-          ? 'bg-green-100 text-green-700'
-          : video.asr_status === 'fallback'
-            ? 'bg-amber-100 text-amber-700'
-            : video.asr_status === 'missing'
-              ? 'bg-red-100 text-red-700'
-              : 'bg-yellow-100 text-yellow-700'"
-          class="px-2 py-1 rounded"
-        >
-          {{ t('status.labels.asr') }}: {{ statusText(video.asr_status) }}
-        </span>
-        <span :class="video.summary_status === 'ready'
-          ? 'bg-green-100 text-green-700'
-          : video.summary_status === 'blocked'
-            ? 'bg-red-100 text-red-700'
-            : video.summary_status === 'skipped_fallback'
-              ? 'bg-amber-100 text-amber-700'
-              : 'bg-yellow-100 text-yellow-700'"
-          class="px-2 py-1 rounded"
-        >
-          {{ t('status.labels.summary') }}: {{ statusText(video.summary_status) }}
-        </span>
-        <span
-          :class="video.using_fallback ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'"
-          class="px-2 py-1 rounded"
-        >
-          {{ t('status.labels.fallback') }}: {{ video.using_fallback ? t('common.yes') : t('common.no') }}
-        </span>
-        <span
-          :class="video.content_quality === 'full'
-            ? 'bg-green-100 text-green-700'
-            : video.content_quality === 'summary'
-              ? 'bg-amber-100 text-amber-700'
-              : 'bg-red-100 text-red-700'"
-          class="px-2 py-1 rounded"
-        >
-          {{ t('status.labels.quality') }}: {{ qualityText(video.content_quality) }}
-        </span>
-        <span
-          v-if="summary && summary.video_category"
-          class="px-2 py-1 rounded bg-purple-100 text-purple-700"
-        >
-          {{ t('video.videoCategory') }}: {{ summary.video_category }}
-        </span>
+
+      <div class="border-t border-border mt-6 pt-4">
+         <div v-if="videoShortSummary" class="mb-4">
+            <div class="text-[10px] text-text-secondary uppercase mb-1">SHORT_SUMMARY</div>
+            <div class="text-sm text-text-primary font-mono border-l-2 border-primary pl-3 py-1 bg-primary/5">
+              {{ videoShortSummary }}
+            </div>
+         </div>
+         
+         <div v-if="videoShortKeywords.length" class="flex flex-wrap gap-2">
+            <span class="text-[10px] text-text-secondary uppercase self-center">KEYWORDS:</span>
+            <span
+              v-for="kw in videoShortKeywords"
+              :key="kw"
+              class="px-2 py-0.5 border border-tertiary/30 text-tertiary text-[10px] font-mono"
+            >
+              {{ kw }}
+            </span>
+         </div>
       </div>
-      <div v-if="videoShortSummary" class="mt-3">
-        <div class="text-xs text-gray-500 mb-1">{{ t('video.shortSummary') }}</div>
-        <div class="text-sm text-gray-800 whitespace-pre-wrap">{{ videoShortSummary }}</div>
-      </div>
-      <div v-if="videoShortKeywords.length" class="mt-2 flex flex-wrap gap-2 text-xs">
-        <span class="text-gray-500">{{ t('video.shortKeywords') }}:</span>
-        <span
-          v-for="kw in videoShortKeywords"
-          :key="kw"
-          class="px-2 py-1 rounded bg-sky-100 text-sky-700"
-        >
-          {{ kw }}
-        </span>
-      </div>
-      <div class="mt-4 flex flex-wrap items-center gap-3">
+
+      <div class="mt-6 flex flex-wrap items-center gap-3">
         <div class="flex items-center space-x-2">
-          <label class="text-sm text-gray-600">{{ t('common.contentType') }}</label>
           <input
             v-model="selectedContentType"
             :placeholder="t('author.authorTypePlaceholder')"
-            class="border rounded px-2 py-1 text-sm"
+            class="terminal-input text-xs w-32"
           />
           <button
             @click="saveContentType"
             :disabled="processing"
-            class="px-3 py-1 bg-gray-900 text-white rounded text-xs"
+            class="terminal-button text-xs py-1 px-2"
           >
-            {{ t('common.save') }}
+            SAVE
           </button>
         </div>
+        <div class="h-6 w-px bg-border mx-2"></div>
         <button 
           @click="triggerResummarize"
           :disabled="processing"
-          class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm"
+          class="terminal-button text-xs py-1 px-3"
         >
-          {{ t('video.resummarize') }}
+          {{ t('video.resummarize').toUpperCase() }}
         </button>
         <button 
           @click="triggerResummarize(true)"
           :disabled="processing"
-          class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
+          class="terminal-button-secondary text-xs py-1 px-3"
         >
-          {{ t('video.resummarizeIncludeFallback') }}
+          {{ t('video.resummarizeIncludeFallback').toUpperCase() }}
         </button>
         <button 
           @click="triggerReprocessAsr"
           :disabled="processing"
-          class="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 text-sm"
+          class="terminal-button-secondary text-xs py-1 px-3"
         >
-          {{ t('video.reprocessAsr') }}
+          {{ t('video.reprocessAsr').toUpperCase() }}
         </button>
       </div>
     </div>
 
     <!-- Playback -->
-    <div v-if="playbackUrl" class="bg-white shadow rounded-lg p-6">
-      <h3 class="text-lg font-medium text-gray-900 mb-4">{{ t('video.originalMedia') }}</h3>
-      <audio controls class="w-full" :src="playbackUrl">
+    <div v-if="playbackUrl" class="terminal-card">
+      <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 flex items-center">
+        <span class="w-1.5 h-1.5 bg-tertiary mr-2"></span>
+        MEDIA_PLAYBACK
+      </h3>
+      <audio controls class="w-full h-8" :src="playbackUrl">
         {{ t('video.audioNotSupported') }}
       </audio>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Summary -->
-      <div class="bg-white shadow rounded-lg p-6 h-fit">
-        <h3 class="text-lg font-medium text-gray-900 mb-4 border-b pb-2">{{ t('video.summaryTitle') }}</h3>
-        <div v-if="summary" class="prose max-w-none text-sm">
-            <div v-if="summaryBlocks.length" class="space-y-3">
-                <div v-for="(block, idx) in summaryBlocks" :key="idx" class="rounded border border-gray-200 p-3">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{{ block.type }}</div>
-                    <div class="prose max-w-none" v-html="renderMarkdown(block.text)"></div>
+      <div class="terminal-card h-fit">
+        <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2 flex items-center justify-between">
+           <span>ANALYSIS_SUMMARY</span>
+           <span class="text-[10px] text-primary">PROCESSED</span>
+        </h3>
+        
+        <div v-if="summary" class="prose prose-invert max-w-none text-sm font-mono leading-relaxed">
+            <div v-if="summaryBlocks.length" class="space-y-4">
+                <div v-for="(block, idx) in summaryBlocks" :key="idx" class="border border-border p-4 bg-surface/50">
+                    <div class="text-[10px] font-bold uppercase tracking-wide text-tertiary mb-2 border-b border-border/50 pb-1">{{ block.type }}</div>
+                    <div class="prose prose-invert max-w-none text-xs" v-html="renderMarkdown(block.text)"></div>
                 </div>
             </div>
-            <div v-else-if="bracketBlocks.length" class="space-y-3">
-                <div v-for="(block, idx) in bracketBlocks" :key="idx" class="rounded border border-gray-200 p-3">
-                    <div class="text-xs font-semibold tracking-wide text-gray-500 mb-2">[{{ block.tag }}]</div>
-                    <div class="prose max-w-none" v-html="renderMarkdown(block.text)"></div>
+            <div v-else-if="bracketBlocks.length" class="space-y-4">
+                <div v-for="(block, idx) in bracketBlocks" :key="idx" class="border border-border p-4 bg-surface/50">
+                    <div class="text-[10px] font-bold tracking-wide text-tertiary mb-2 border-b border-border/50 pb-1">[{{ block.tag }}]</div>
+                    <div class="prose prose-invert max-w-none text-xs" v-html="renderMarkdown(block.text)"></div>
                 </div>
             </div>
-            <div v-else-if="summary.content" class="whitespace-pre-wrap">
+            <div v-else-if="summary.content" class="whitespace-pre-wrap text-xs">
                 {{ summary.content }}
             </div>
         </div>
-        <div v-else class="text-gray-500 italic">{{ t('video.noSummary') }}</div>
+        <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">NO_SUMMARY_DATA</div>
       </div>
 
       <!-- Transcript -->
-      <div class="bg-white shadow rounded-lg p-6 max-h-[800px] overflow-y-auto">
-        <h3 class="text-lg font-medium text-gray-900 mb-4 border-b pb-2">{{ t('video.transcriptTitle') }}</h3>
-        <div v-if="segments.length > 0" class="space-y-4">
-            <div v-for="seg in segments" :key="seg.id" class="text-sm">
-                <div class="text-xs text-gray-400 mb-1">
-                    {{ formatTime(seg.start_time_ms) }} - {{ formatTime(seg.end_time_ms) }}
+      <div class="terminal-card max-h-[800px] overflow-y-auto scrollbar-terminal">
+        <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2 flex items-center justify-between">
+           <span>RAW_TRANSCRIPT</span>
+           <span class="text-[10px] text-secondary">{{ segments.length }} SEGMENTS</span>
+        </h3>
+        
+        <div v-if="segments.length > 0" class="space-y-2 font-mono">
+            <div v-for="seg in segments" :key="seg.id" class="text-xs hover:bg-white/5 p-1 rounded transition-colors group">
+                <div class="flex gap-3">
+                    <span class="text-text-secondary min-w-[80px] select-none group-hover:text-primary transition-colors">
+                        [{{ formatTime(seg.start_time_ms) }}]
+                    </span>
+                    <p class="text-text-primary group-hover:text-white">{{ seg.text }}</p>
                 </div>
-                <p class="text-gray-800">{{ seg.text }}</p>
             </div>
         </div>
-        <div v-else class="text-gray-500 italic">{{ t('video.noTranscript') }}</div>
+        <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">NO_TRANSCRIPT_DATA</div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.scrollbar-terminal::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-terminal::-webkit-scrollbar-track {
+  @apply bg-background;
+}
+.scrollbar-terminal::-webkit-scrollbar-thumb {
+  @apply bg-border hover:bg-primary;
+}
+</style>

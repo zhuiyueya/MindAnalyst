@@ -68,38 +68,38 @@ const isPlainObject = (value) => Object.prototype.toString.call(value) === '[obj
 
 const renderJsonValue = (value) => {
   if (value === null || value === undefined) {
-    return '<span class="text-gray-400">-</span>'
+    return '<span class="text-text-secondary">-</span>'
   }
   if (typeof value === 'string') {
-    return `<div class="prose max-w-none">${md.render(value)}</div>`
+    return `<div class="prose prose-invert max-w-none text-text-primary text-sm">${md.render(value)}</div>`
   }
   if (typeof value === 'number' || typeof value === 'boolean') {
-    return `<span class="text-gray-800">${escapeHtml(value)}</span>`
+    return `<span class="text-primary font-mono">${escapeHtml(value)}</span>`
   }
   if (Array.isArray(value)) {
-    if (!value.length) return '<span class="text-gray-400">[]</span>'
-    return `<div class="space-y-2">${value
-      .map((item) => `<div class="rounded border border-gray-200 bg-white p-2">${renderJsonValue(item)}</div>`)
+    if (!value.length) return '<span class="text-text-secondary">[]</span>'
+    return `<div class="space-y-2 border-l border-border pl-4">${value
+      .map((item) => `<div class="my-2">${renderJsonValue(item)}</div>`)
       .join('')}</div>`
   }
   if (isPlainObject(value)) {
     const entries = Object.entries(value)
-    if (!entries.length) return '<span class="text-gray-400">{}</span>'
-    return `<div class="space-y-3">${entries
+    if (!entries.length) return '<span class="text-text-secondary">{}</span>'
+    return `<div class="space-y-3 border-l border-border pl-4">${entries
       .map(
         ([key, val]) => `
-          <div class="rounded border border-gray-200 bg-white p-3">
-            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">${escapeHtml(key)}</div>
+          <div class="my-2">
+            <div class="text-xs font-bold uppercase tracking-wide text-tertiary mb-1">${escapeHtml(key)}</div>
             ${renderJsonValue(val)}
           </div>
         `
       )
       .join('')}</div>`
   }
-  return `<span class="text-gray-800">${escapeHtml(value)}</span>`
+  return `<span class="text-text-primary">${escapeHtml(value)}</span>`
 }
 
-const renderJsonBlock = (value) => `<div class="space-y-4">${renderJsonValue(value)}</div>`
+const renderJsonBlock = (value) => `<div class="space-y-4 font-mono text-sm">${renderJsonValue(value)}</div>`
 
 const statusText = (status) => t(`status.values.${status || 'pending'}`)
 const qualityText = (quality) => t(`status.values.${quality || 'summary'}`)
@@ -154,17 +154,17 @@ const videoShortKeywords = (video) => {
 const statusClass = (status) => {
   switch (status) {
     case 'ready':
-      return 'bg-green-100 text-green-700'
+      return 'text-primary'
     case 'fallback':
-      return 'bg-amber-100 text-amber-700'
+      return 'text-secondary'
     case 'missing':
-      return 'bg-red-100 text-red-700'
+      return 'text-red-500'
     case 'blocked':
-      return 'bg-red-100 text-red-700'
+      return 'text-red-500'
     case 'skipped_fallback':
-      return 'bg-yellow-100 text-yellow-700'
+      return 'text-secondary'
     default:
-      return 'bg-gray-100 text-gray-700'
+      return 'text-text-secondary'
   }
 }
 
@@ -176,7 +176,7 @@ const renderReport = computed(() => {
     const parsed = JSON.parse(content)
     return renderJsonBlock(parsed)
   } catch (e) {
-    return md.render(content)
+    return `<div class="prose prose-invert max-w-none text-text-primary">${md.render(content)}</div>`
   }
 })
 
@@ -324,276 +324,193 @@ const triggerReprocessAsr = async () => {
 </script>
 
 <template>
-  <div v-if="loading" class="text-center py-10">{{ t('common.loading') }}</div>
-  <div v-else class="space-y-6">
-    <!-- Header -->
-    <div class="bg-white shadow rounded-lg p-6">
-      <div class="flex items-center space-x-6">
-        <img 
-          v-if="author.avatar_url" 
-          :src="author.avatar_url" 
-          class="h-24 w-24 rounded-full"
-        >
-        <div class="flex-1">
-          <h2 class="text-3xl font-bold text-gray-900">{{ author.name }}</h2>
-          <p class="text-gray-500 mt-1">
-            <a :href="author.homepage_url" target="_blank" class="text-indigo-600 hover:underline">
-              {{ author.homepage_url }}
-            </a>
-          </p>
-          <div v-if="authorStatus" class="mt-3 flex flex-wrap gap-2 text-xs">
-            <span class="px-2 py-1 rounded bg-gray-100 text-gray-700">
-              {{ t('author.status.videos') }}: {{ authorStatus.total_videos }}
-            </span>
-            <span class="px-2 py-1 rounded bg-green-100 text-green-700">
-              {{ t('author.status.asrReady') }}: {{ authorStatus.asr_status_counts.ready }}
-            </span>
-            <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
-              {{ t('author.status.asrFallback') }}: {{ authorStatus.asr_status_counts.fallback }}
-            </span>
-            <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
-              {{ t('author.status.asrPending') }}: {{ authorStatus.asr_status_counts.pending }}
-            </span>
-            <span class="px-2 py-1 rounded bg-red-100 text-red-700">
-              {{ t('author.status.asrMissing') }}: {{ authorStatus.asr_status_counts.missing }}
-            </span>
-            <span class="px-2 py-1 rounded bg-green-100 text-green-700">
-              {{ t('author.status.summaryReady') }}: {{ authorStatus.summary_status_counts.ready }}
-            </span>
-            <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
-              {{ t('author.status.summaryPending') }}: {{ authorStatus.summary_status_counts.pending }}
-            </span>
-            <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
-              {{ t('author.status.summarySkipped') }}: {{ authorStatus.summary_status_counts.skipped_fallback }}
-            </span>
-            <span class="px-2 py-1 rounded bg-red-100 text-red-700">
-              {{ t('author.status.summaryBlocked') }}: {{ authorStatus.summary_status_counts.blocked }}
-            </span>
-            <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-              {{ t('author.status.qualityFull') }}: {{ authorStatus.content_quality_counts.full }}
-            </span>
-            <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-              {{ t('author.status.qualitySummary') }}: {{ authorStatus.content_quality_counts.summary }}
-            </span>
-            <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-              {{ t('author.status.qualityMissing') }}: {{ authorStatus.content_quality_counts.missing }}
-            </span>
+  <div v-if="loading" class="text-center py-20 font-mono text-primary animate-pulse">
+    > ACCESSING_SECURE_ARCHIVES...
+  </div>
+  <div v-else class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+    
+    <!-- Left Column: Identity & Actions -->
+    <div class="lg:col-span-4 space-y-6">
+      <div class="terminal-card">
+        <div class="flex flex-col items-center text-center mb-6">
+          <div class="relative mb-4">
+             <img 
+              v-if="author.avatar_url" 
+              :src="author.avatar_url" 
+              class="h-32 w-32 grayscale border-2 border-primary p-1"
+            >
+             <div v-else class="h-32 w-32 bg-surface border-2 border-primary flex items-center justify-center text-text-secondary text-4xl font-bold font-mono">
+              {{ author.name.charAt(0) }}
+            </div>
           </div>
-          <div v-if="authorCategories.length" class="mt-3 flex flex-wrap gap-2 text-xs">
-            <span class="text-gray-500">{{ t('author.categoryList') }}:</span>
+          <h2 class="text-2xl font-bold text-text-primary tracking-tight">{{ author.name }}</h2>
+          <a :href="author.homepage_url" target="_blank" class="text-xs font-mono text-tertiary hover:underline mt-1 truncate max-w-full">
+            {{ author.homepage_url }}
+          </a>
+        </div>
+
+        <div class="border-t border-border pt-4 space-y-3 font-mono text-xs">
+           <div class="flex justify-between">
+            <span class="text-text-secondary">STATUS</span>
+            <span class="text-primary">ACTIVE</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-text-secondary">TOTAL_VIDS</span>
+            <span class="text-white">{{ authorStatus?.total_videos || 0 }}</span>
+          </div>
+          <div class="flex justify-between">
+             <span class="text-text-secondary">ASR_COVERAGE</span>
+             <span class="text-white">{{ authorStatus?.asr_status_counts.ready || 0 }}</span>
+          </div>
+          <div class="flex justify-between">
+             <span class="text-text-secondary">QUALITY_FULL</span>
+             <span class="text-white">{{ authorStatus?.content_quality_counts.full || 0 }}</span>
+          </div>
+        </div>
+
+        <div v-if="authorCategories.length" class="mt-4 pt-4 border-t border-border">
+          <div class="text-[10px] text-text-secondary uppercase mb-2">TAGS</div>
+          <div class="flex flex-wrap gap-2">
             <span
               v-for="category in authorCategories"
               :key="category"
-              class="px-2 py-1 rounded bg-blue-100 text-blue-700"
+              class="px-2 py-0.5 border border-tertiary/50 text-tertiary text-[10px]"
             >
               {{ category }}
             </span>
           </div>
-          <div class="mt-4 flex flex-wrap items-center gap-3">
-            <div class="flex items-center space-x-2">
-              <label class="text-sm text-gray-600">{{ t('author.authorTypeLabel') }}</label>
-              <input
-                v-model="selectedAuthorType"
-                :placeholder="t('author.authorTypePlaceholder')"
-                class="border rounded px-2 py-1 text-sm"
-              />
-              <button
-                @click="saveAuthorType"
-                :disabled="processing"
-                class="px-3 py-1 bg-gray-900 text-white rounded text-xs"
-              >
-                {{ t('common.save') }}
-              </button>
-            </div>
-            <button 
-              @click="triggerRegenerateReport"
-              :disabled="processing"
-              class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('author.regenerateReport') }}
-            </button>
-            <button 
-              @click="triggerResummarizeAll"
-              :disabled="processing"
-              class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('author.resummarizeAll') }}
-            </button>
-            <button 
-              @click="triggerResummarizePending"
-              :disabled="processing"
-              class="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('author.resummarizePending') }}
-            </button>
-            <button 
-              @click="triggerCompressShortSummaries"
-              :disabled="processing"
-              class="px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('author.compressShortSummaries') }}
-            </button>
-            <button 
-              @click="triggerGenerateCategories"
-              :disabled="processing"
-              class="px-4 py-2 bg-violet-600 text-white rounded hover:bg-violet-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('author.generateCategories') }}
-            </button>
-            <button 
-              @click="triggerGenerateCategoryReports"
-              :disabled="processing"
-              class="px-4 py-2 bg-fuchsia-600 text-white rounded hover:bg-fuchsia-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('author.generateCategoryReports') }}
-            </button>
-            <button 
-              @click="triggerRagReindexAuthor"
-              :disabled="processing"
-              class="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-800 disabled:opacity-50 text-sm"
-            >
-              {{ t('rag.reindexAuthor') }}
-            </button>
-            <button 
-              @click="triggerRagReindexAll"
-              :disabled="processing"
-              class="px-4 py-2 bg-slate-600 text-white rounded hover:bg-slate-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('rag.reindexAll') }}
-            </button>
-            <button 
-              @click="triggerResummarizeAll(true)"
-              :disabled="processing"
-              class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('author.resummarizeAllIncludeFallback') }}
-            </button>
-            <button 
-              @click="triggerReprocessAsr"
-              :disabled="processing"
-              class="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 text-sm"
-            >
-              {{ t('author.reprocessAsr') }}
+        </div>
+      </div>
+
+      <!-- Control Panel -->
+      <div class="terminal-card">
+        <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 flex items-center">
+          <span class="w-1.5 h-1.5 bg-secondary mr-2"></span>
+          CONTROL_PANEL
+        </h3>
+        
+        <div class="space-y-3">
+          <div class="flex items-center space-x-2 mb-4">
+            <input
+              v-model="selectedAuthorType"
+              :placeholder="t('author.authorTypePlaceholder')"
+              class="terminal-input text-xs"
+            />
+            <button @click="saveAuthorType" :disabled="processing" class="terminal-button text-xs py-1 px-2">
+              SAVE
             </button>
           </div>
+
+          <div class="grid grid-cols-1 gap-2">
+            <button @click="triggerRegenerateReport" :disabled="processing" class="terminal-button text-xs text-center w-full">
+              {{ t('author.regenerateReport') }}
+            </button>
+            <button @click="triggerResummarizeAll" :disabled="processing" class="terminal-button text-xs text-center w-full">
+              {{ t('author.resummarizeAll') }}
+            </button>
+            <button @click="triggerGenerateCategories" :disabled="processing" class="terminal-button text-xs text-center w-full">
+              {{ t('author.generateCategories') }}
+            </button>
+             <button @click="triggerRagReindexAuthor" :disabled="processing" class="terminal-button-secondary text-xs text-center w-full">
+              {{ t('rag.reindexAuthor') }}
+            </button>
+          </div>
+          
+           <details class="text-[10px] text-text-secondary cursor-pointer mt-4">
+            <summary class="hover:text-primary">ADVANCED_OPERATIONS</summary>
+            <div class="grid grid-cols-1 gap-2 mt-2 pl-2 border-l border-border">
+              <button @click="triggerResummarizePending" class="text-left hover:text-white">>> {{ t('author.resummarizePending') }}</button>
+              <button @click="triggerCompressShortSummaries" class="text-left hover:text-white">>> {{ t('author.compressShortSummaries') }}</button>
+              <button @click="triggerGenerateCategoryReports" class="text-left hover:text-white">>> {{ t('author.generateCategoryReports') }}</button>
+              <button @click="triggerReprocessAsr" class="text-left hover:text-secondary">>> {{ t('author.reprocessAsr') }}</button>
+              <button @click="triggerResummarizeAll(true)" class="text-left hover:text-secondary">>> {{ t('author.resummarizeAllIncludeFallback') }}</button>
+            </div>
+          </details>
         </div>
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="border-b border-gray-200">
-      <nav class="-mb-px flex space-x-8">
+    <!-- Right Column: Data Feed -->
+    <div class="lg:col-span-8">
+      <!-- Tabs -->
+      <div class="flex border-b border-border mb-6">
         <button 
           @click="activeTab = 'report'"
-          :class="[activeTab === 'report' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']"
+          :class="[activeTab === 'report' ? 'border-b-2 border-primary text-primary' : 'text-text-secondary hover:text-white', 'px-6 py-3 text-sm font-mono uppercase tracking-wider transition-colors']"
         >
           {{ t('author.analysisReportTab') }}
         </button>
         <button 
           @click="activeTab = 'videos'"
-          :class="[activeTab === 'videos' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']"
+          :class="[activeTab === 'videos' ? 'border-b-2 border-primary text-primary' : 'text-text-secondary hover:text-white', 'px-6 py-3 text-sm font-mono uppercase tracking-wider transition-colors']"
         >
-          {{ t('author.videosTab') }} ({{ videos.length }})
-        </button>
-      </nav>
-    </div>
-
-    <!-- Content -->
-    <div v-if="activeTab === 'report'" class="bg-white shadow rounded-lg p-6">
-      <div v-if="reportTypes.length" class="mb-4 flex flex-wrap items-center gap-2">
-        <span class="text-sm text-gray-600">{{ t('common.reportType') }}:</span>
-        <button
-          v-for="type in reportTypes"
-          :key="type"
-          @click="selectedReportType = type"
-          :class="[selectedReportType === type ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700', 'px-3 py-1 rounded text-xs']"
-        >
-          {{ type }}
+          {{ t('author.videosTab') }} [{{ videos.length }}]
         </button>
       </div>
-      <div v-if="categoryReportKeys.length" class="mb-4 flex flex-wrap items-center gap-2">
-        <span class="text-sm text-gray-600">{{ t('author.categoryReportLabel') }}:</span>
-        <button
-          v-for="cat in categoryReportKeys"
-          :key="cat"
-          @click="selectedCategory = cat"
-          :class="[selectedCategory === cat ? 'bg-fuchsia-600 text-white' : 'bg-gray-100 text-gray-700', 'px-3 py-1 rounded text-xs']"
-        >
-          {{ cat }}
-        </button>
-      </div>
-      <div class="prose max-w-none" v-html="renderReport"></div>
-    </div>
 
-    <div v-else-if="activeTab === 'videos'" class="bg-white shadow rounded-lg overflow-hidden">
-      <ul class="divide-y divide-gray-200">
-        <li v-for="video in videos" :key="video.id" class="px-6 py-4 hover:bg-gray-50">
-          <div class="flex items-center justify-between">
-            <div class="flex-1 min-w-0">
-              <h4 class="text-lg font-medium text-indigo-600 truncate cursor-pointer" @click="$router.push(`/videos/${video.id}`)">
+      <!-- Report View -->
+      <div v-if="activeTab === 'report'" class="terminal-card min-h-[500px]">
+        <div class="flex flex-wrap gap-4 mb-6 border-b border-border pb-4">
+           <div v-if="reportTypes.length" class="flex items-center gap-2">
+            <span class="text-xs text-text-secondary uppercase">TYPE:</span>
+            <button
+              v-for="type in reportTypes"
+              :key="type"
+              @click="selectedReportType = type"
+              :class="[selectedReportType === type ? 'bg-primary text-black' : 'bg-surface border border-border text-text-secondary', 'px-2 py-1 text-[10px] uppercase font-bold transition-colors']"
+            >
+              {{ type }}
+            </button>
+          </div>
+           <div v-if="categoryReportKeys.length" class="flex items-center gap-2">
+            <span class="text-xs text-text-secondary uppercase">CAT:</span>
+             <button
+              v-for="cat in categoryReportKeys"
+              :key="cat"
+              @click="selectedCategory = cat"
+              :class="[selectedCategory === cat ? 'bg-tertiary text-black' : 'bg-surface border border-border text-text-secondary', 'px-2 py-1 text-[10px] uppercase font-bold transition-colors']"
+            >
+              {{ cat }}
+            </button>
+          </div>
+        </div>
+        
+        <div class="font-mono text-sm leading-relaxed" v-html="renderReport"></div>
+      </div>
+
+      <!-- Videos View -->
+      <div v-else-if="activeTab === 'videos'" class="space-y-4">
+        <div v-for="video in videos" :key="video.id" class="terminal-card p-4 hover:border-primary/50 transition-colors group">
+          <div class="flex justify-between items-start">
+            <div class="flex-1">
+              <h4 
+                class="text-base font-bold text-text-primary cursor-pointer hover:text-primary transition-colors mb-2" 
+                @click="$router.push(`/videos/${video.id}`)"
+              >
                 {{ video.title }}
               </h4>
-              <p class="text-sm text-gray-500 mt-1">
-                {{ t('common.published') }}: {{ formatDate(video.published_at) }} |
-                {{ t('common.type') }}: {{ video.type }} |
-                {{ t('common.contentType') }}: {{ video.content_type || 'generic' }}
-              </p>
-              <div class="mt-2 flex flex-wrap gap-2 text-xs">
-                <span :class="statusClass(video.asr_status)" class="px-2 py-1 rounded">
-                  {{ t('status.labels.asr') }}: {{ statusText(video.asr_status) }}
-                </span>
-                <span :class="statusClass(video.summary_status)" class="px-2 py-1 rounded">
-                  {{ t('status.labels.summary') }}: {{ statusText(video.summary_status) }}
-                </span>
-                <span
-                  :class="video.using_fallback ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700'"
-                  class="px-2 py-1 rounded"
-                >
-                  {{ t('status.labels.fallback') }}: {{ video.using_fallback ? t('common.yes') : t('common.no') }}
-                </span>
-                <span
-                  :class="video.content_quality === 'full'
-                    ? 'bg-green-100 text-green-700'
-                    : video.content_quality === 'summary'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-red-100 text-red-700'"
-                  class="px-2 py-1 rounded"
-                >
-                  {{ t('status.labels.quality') }}: {{ qualityText(video.content_quality) }}
-                </span>
-                <span
-                  v-if="video.video_category"
-                  class="px-2 py-1 rounded bg-purple-100 text-purple-700"
-                >
-                  {{ t('video.videoCategory') }}: {{ videoCategoryLabel(video.video_category) }}
-                </span>
+              <div class="flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-mono text-text-secondary uppercase mb-3">
+                <span>DATE: {{ formatDate(video.published_at) }}</span>
+                <span>TYPE: {{ video.type }}</span>
+                <span :class="statusClass(video.asr_status)">ASR: {{ statusText(video.asr_status) }}</span>
+                <span :class="statusClass(video.summary_status)">SUM: {{ statusText(video.summary_status) }}</span>
+                <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'">QUAL: {{ qualityText(video.content_quality) }}</span>
               </div>
-              <div v-if="videoShortSummary(video)" class="mt-2">
-                <div class="text-xs text-gray-500 mb-1">{{ t('video.shortSummary') }}</div>
-                <div class="text-sm text-gray-800 whitespace-pre-wrap">{{ videoShortSummary(video) }}</div>
-              </div>
-              <div v-if="videoShortKeywords(video).length" class="mt-2 flex flex-wrap gap-2 text-xs">
-                <span class="text-gray-500">{{ t('video.shortKeywords') }}:</span>
-                <span
-                  v-for="kw in videoShortKeywords(video)"
-                  :key="kw"
-                  class="px-2 py-1 rounded bg-sky-100 text-sky-700"
-                >
-                  {{ kw }}
-                </span>
+              
+              <div v-if="videoShortSummary(video)" class="text-xs text-text-primary/80 font-mono pl-3 border-l-2 border-border group-hover:border-primary transition-colors">
+                {{ videoShortSummary(video) }}
               </div>
             </div>
-            <div class="ml-4">
-               <button 
+             <button 
                  @click="$router.push(`/videos/${video.id}`)"
-                 class="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                 class="ml-4 text-tertiary text-xs hover:underline uppercase"
                >
-                 {{ t('common.viewDetails') }}
-               </button>
-            </div>
+                 [OPEN]
+             </button>
           </div>
-        </li>
-      </ul>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>

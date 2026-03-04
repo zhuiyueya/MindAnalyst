@@ -2,8 +2,10 @@
 import { ref, nextTick, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
+import MarkdownIt from 'markdown-it'
 
 const { t } = useI18n()
+const md = new MarkdownIt()
 
 const messages = ref([
   { role: 'assistant', content: t('chat.welcome') }
@@ -20,10 +22,6 @@ const fetchAuthors = async () => {
   try {
     const res = await axios.get('/api/v1/authors')
     authors.value = res.data
-    if (authors.value.length > 0) {
-      // Default select the first one if not set
-      // selectedAuthorId.value = authors.value[0].id
-    }
   } catch (e) {
     console.error('Failed to fetch authors', e)
   }
@@ -45,7 +43,7 @@ const handleChat = async () => {
   const rawQuery = query.value
   const tags = (tagFilter.value || '').trim()
   const userQuery = tags ? `tag:${tags} ${rawQuery}` : rawQuery
-  messages.value.push({ role: 'user', content: userQuery })
+  messages.value.push({ role: 'user', content: userQuery, timestamp: new Date().toLocaleTimeString() })
   query.value = ''
   isLoading.value = true
   scrollToBottom()
@@ -59,12 +57,14 @@ const handleChat = async () => {
     messages.value.push({ 
       role: 'assistant', 
       content: res.data.answer,
-      citations: res.data.citations 
+      citations: res.data.citations,
+      timestamp: new Date().toLocaleTimeString()
     })
   } catch (e) {
     messages.value.push({
       role: 'assistant',
-      content: `${t('chat.errorPrefix')}${e.response?.data?.detail || e.message}`
+      content: `${t('chat.errorPrefix')}${e.response?.data?.detail || e.message}`,
+      timestamp: new Date().toLocaleTimeString()
     })
   } finally {
     isLoading.value = false
@@ -85,141 +85,148 @@ const triggerReindexAuthor = async () => {
     isReindexing.value = false
   }
 }
-
-const triggerReindexAll = async () => {
-  if (isReindexing.value) return
-  if (!confirm(t('rag.confirmReindexAll'))) return
-  isReindexing.value = true
-  try {
-    await axios.post('/api/v1/rag/reindex', { author_id: null })
-    alert(t('common.batchTaskStarted'))
-  } catch (e) {
-    alert(t('common.failedPrefix') + (e.response?.data?.detail || e.message))
-  } finally {
-    isReindexing.value = false
-  }
-}
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <!-- Toolbar -->
-    <div class="px-6 py-3 border-b bg-gray-50 flex items-center justify-between">
-      <div class="flex items-center space-x-2">
-        <label class="text-sm font-medium text-gray-700">{{ t('chat.toolbarLabel') }}</label>
-        <select 
-          v-model="selectedAuthorId" 
-          class="block w-48 pl-3 pr-10 py-1.5 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-        >
-          <option :value="null">{{ t('chat.allAuthors') }}</option>
-          <option v-for="author in authors" :key="author.id" :value="author.id">
-            {{ author.name }} ({{ author.platform }})
-          </option>
-        </select>
-        <input
-          v-model="tagFilter"
-          type="text"
-          :placeholder="t('chat.tagPlaceholder')"
-          class="block w-56 p-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-        />
+  <div class="flex flex-col h-[calc(100vh-120px)] border border-border bg-surface/30">
+    <!-- Terminal Toolbar -->
+    <div class="px-6 py-3 border-b border-border bg-surface flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-4">
+        <div class="flex items-center space-x-2">
+          <span class="text-[10px] font-bold text-text-secondary uppercase">SCOPE:</span>
+          <select 
+            v-model="selectedAuthorId" 
+            class="bg-background border border-border text-primary text-xs font-mono py-1 px-2 focus:outline-none focus:border-primary"
+          >
+            <option :value="null">{{ t('chat.allAuthors').toUpperCase() }}</option>
+            <option v-for="author in authors" :key="author.id" :value="author.id">
+              {{ author.name.toUpperCase() }}
+            </option>
+          </select>
+        </div>
+        <div class="flex items-center space-x-2">
+           <span class="text-[10px] font-bold text-text-secondary uppercase">FILTER:</span>
+           <input
+            v-model="tagFilter"
+            type="text"
+            :placeholder="t('chat.tagPlaceholder')"
+            class="bg-background border border-border text-primary text-xs font-mono py-1 px-2 focus:outline-none focus:border-primary w-40"
+          />
+        </div>
       </div>
-      <div class="flex items-center space-x-3">
+      
+      <div class="flex items-center space-x-4">
         <button
           @click="triggerReindexAuthor"
           :disabled="isReindexing || !selectedAuthorId"
-          class="text-xs text-slate-700 hover:text-slate-900 disabled:opacity-50"
+          class="text-[10px] font-bold text-text-secondary hover:text-primary disabled:opacity-30 uppercase tracking-tighter"
         >
-          {{ t('rag.reindexAuthor') }}
+          [REINDEX_SCOPE]
         </button>
-        <button
-          @click="triggerReindexAll"
-          :disabled="isReindexing"
-          class="text-xs text-slate-700 hover:text-slate-900 disabled:opacity-50"
-        >
-          {{ t('rag.reindexAll') }}
-        </button>
-        <button @click="fetchAuthors" class="text-xs text-indigo-600 hover:text-indigo-800">
-          {{ t('chat.refreshAuthors') }}
+        <div class="h-4 w-px bg-border"></div>
+        <button @click="fetchAuthors" class="text-[10px] font-bold text-tertiary hover:text-white uppercase tracking-tighter">
+          [REFRESH_AUTHORS]
         </button>
       </div>
     </div>
 
-    <!-- Chat History -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-4">
+    <!-- Terminal Output Area -->
+    <div class="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-terminal">
       <div 
         v-for="(msg, idx) in messages" 
         :key="idx"
-        :class="['flex', msg.role === 'user' ? 'justify-end' : 'justify-start']"
+        class="flex flex-col"
       >
+        <!-- Role & Timestamp -->
+        <div class="flex items-center space-x-2 mb-2">
+           <span :class="[msg.role === 'user' ? 'text-secondary' : 'text-primary', 'text-[10px] font-bold uppercase']">
+             {{ msg.role === 'user' ? '>> USER_INPUT' : '>> ANALYST_CORE' }}
+           </span>
+           <span class="text-[10px] text-text-secondary font-mono">[{{ msg.timestamp || 'INIT' }}]</span>
+        </div>
+
+        <!-- Content -->
         <div 
           :class="[
-            'max-w-[80%] rounded-lg p-4 shadow',
-            msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-900'
+            'p-4 border font-mono text-sm leading-relaxed',
+            msg.role === 'user' ? 'border-secondary/30 bg-secondary/5 text-text-primary' : 'border-primary/30 bg-primary/5 text-text-primary'
           ]"
         >
-          <div class="whitespace-pre-wrap">{{ msg.content }}</div>
+          <div v-if="msg.role === 'assistant'" class="prose prose-invert max-w-none text-sm" v-html="md.render(msg.content)"></div>
+          <div v-else class="whitespace-pre-wrap">{{ msg.content }}</div>
           
-          <!-- Citations -->
-          <div v-if="msg.citations && msg.citations.length" class="mt-4 pt-4 border-t border-gray-300 text-xs">
-            <p class="font-semibold mb-2">{{ t('chat.sources') }}</p>
-            <ul class="space-y-1">
-              <li v-for="(cit, cIdx) in msg.citations" :key="cIdx" class="text-gray-600">
-                <div class="flex items-start">
-                  <span class="mr-1">[{{ cit.index }}]</span>
+          <!-- Citations / Sources -->
+          <div v-if="msg.citations && msg.citations.length" class="mt-6 pt-4 border-t border-border">
+            <div class="text-[10px] font-bold text-tertiary uppercase mb-3">Sourced_Documents:</div>
+            <div class="space-y-3">
+              <div v-for="(cit, cIdx) in msg.citations" :key="cIdx" class="text-xs group">
+                <div class="flex items-start gap-3">
+                  <span class="text-tertiary font-bold">[{{ cit.index }}]</span>
                   <div class="flex-1">
-                    <div class="flex flex-wrap items-center gap-x-2">
-                      <a v-if="cit.url" :href="cit.url" target="_blank" class="hover:underline hover:text-indigo-600">
-                        {{ cit.title || 'Untitled' }}
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <a v-if="cit.url" :href="cit.url" target="_blank" class="text-text-primary font-bold hover:text-tertiary transition-colors">
+                        {{ cit.title || 'UNTITLED_REF' }}
                       </a>
-                      <span v-else class="text-gray-700">{{ cit.title || 'Untitled' }}</span>
-                      <span v-if="cit.tag" class="px-1.5 py-0.5 rounded bg-gray-200 text-gray-700">{{ cit.tag }}</span>
-                      <span v-if="cit.source_type" class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{{ cit.source_type }}</span>
+                      <span v-else class="text-text-primary font-bold">{{ cit.title || 'UNTITLED_REF' }}</span>
+                      <span v-if="cit.tag" class="text-[9px] px-1 border border-border text-text-secondary uppercase">{{ cit.tag }}</span>
                     </div>
-                    <div class="mt-1 text-gray-700">
-                      {{ (cit.text || '').substring(0, 120) }}<span v-if="(cit.text || '').length > 120">...</span>
-                    </div>
-                    <div class="mt-1 text-[11px] text-gray-500">
-                      <span v-if="cit.summary_id">summary_id={{ cit.summary_id }}</span>
-                      <span v-if="cit.content_id" class="ml-2">content_id={{ cit.content_id }}</span>
+                    <div class="mt-1 text-text-secondary line-clamp-2 italic group-hover:line-clamp-none transition-all">
+                      "{{ cit.text }}"
                     </div>
                   </div>
                 </div>
-              </li>
-            </ul>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <div v-if="isLoading" class="flex justify-start">
-        <div class="bg-gray-100 rounded-lg p-4 shadow">
-          <div class="flex space-x-2">
-            <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-            <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-75"></div>
-            <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-150"></div>
-          </div>
-        </div>
+
+      <!-- Typing Indicator -->
+      <div v-if="isLoading" class="flex flex-col">
+         <div class="text-[10px] font-bold text-primary uppercase mb-2">>> ANALYST_CORE</div>
+         <div class="p-4 border border-primary/30 bg-primary/5">
+            <div class="flex space-x-1">
+              <div class="w-1.5 h-3 bg-primary animate-pulse"></div>
+              <span class="text-xs text-primary font-mono animate-pulse">PROCESSING_QUERY...</span>
+            </div>
+         </div>
       </div>
+      
       <div ref="messagesEndRef"></div>
     </div>
 
-    <!-- Input Area -->
-    <div class="p-4 bg-gray-50 border-t">
-      <div class="flex space-x-4">
+    <!-- Terminal Input Area -->
+    <div class="p-6 bg-surface border-t border-border">
+      <div class="flex items-center gap-4">
+        <span class="text-primary font-bold animate-pulse">></span>
         <input 
           v-model="query"
           @keyup.enter="handleChat"
           type="text"
-          :placeholder="t('chat.askPlaceholder')"
-          class="flex-1 p-3 border rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          :placeholder="t('chat.askPlaceholder').toUpperCase()"
+          class="flex-1 bg-transparent border-none text-primary font-mono text-sm focus:ring-0 placeholder-gray-700"
           :disabled="isLoading"
         />
         <button 
           @click="handleChat"
           :disabled="isLoading || !query.trim()"
-          class="bg-indigo-600 text-white px-6 py-3 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          class="terminal-button py-1 px-4 text-xs"
         >
-          {{ t('chat.send') }}
+          EXECUTE
         </button>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.scrollbar-terminal::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-terminal::-webkit-scrollbar-track {
+  @apply bg-background;
+}
+.scrollbar-terminal::-webkit-scrollbar-thumb {
+  @apply bg-border hover:bg-primary;
+}
+</style>

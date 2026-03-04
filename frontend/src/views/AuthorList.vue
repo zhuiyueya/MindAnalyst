@@ -20,78 +20,78 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex justify-between items-center">
-      <h2 class="text-2xl font-bold text-gray-900">{{ t('authors.title') }}</h2>
+  <div class="space-y-8">
+    <div class="flex justify-between items-end border-b border-border pb-4">
+      <h2 class="text-3xl font-bold text-text-primary uppercase tracking-widest">
+        <span class="text-tertiary">/</span> {{ t('authors.title') }}
+      </h2>
+      <div class="font-mono text-xs text-text-secondary">
+        TOTAL_RECORDS: <span class="text-tertiary">{{ authors.length }}</span>
+      </div>
     </div>
 
-    <div v-if="loading" class="text-center py-10 text-gray-500">{{ t('common.loading') }}</div>
+    <div v-if="loading" class="text-center py-20 font-mono text-primary animate-pulse">
+      > SYSTEM_LOADING_DATA...
+    </div>
     
     <div v-else class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
       <div 
         v-for="author in authors" 
         :key="author.id" 
-        class="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow cursor-pointer border border-transparent hover:border-indigo-500"
+        class="terminal-card group hover:border-tertiary transition-colors cursor-pointer"
         @click="$router.push(`/authors/${author.id}`)"
       >
-        <div class="px-4 py-5 sm:p-6 flex items-center space-x-4">
-          <img 
-            v-if="author.avatar_url" 
-            :src="author.avatar_url" 
-            alt="" 
-            class="h-16 w-16 rounded-full bg-gray-100"
-          >
-          <div v-else class="h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-xl font-bold">
-            {{ author.name.charAt(0) }}
+        <!-- Card Header -->
+        <div class="flex items-start space-x-4 mb-6">
+          <div class="relative">
+            <img 
+              v-if="author.avatar_url" 
+              :src="author.avatar_url" 
+              alt="" 
+              class="h-16 w-16 grayscale group-hover:grayscale-0 transition-all border border-border"
+            >
+            <div v-else class="h-16 w-16 bg-surface border border-border flex items-center justify-center text-text-secondary text-xl font-bold font-mono">
+              {{ author.name.charAt(0) }}
+            </div>
+            <!-- Status Dot -->
+            <div class="absolute -bottom-1 -right-1 w-3 h-3 bg-primary border border-black"></div>
           </div>
           
-          <div class="flex-1 min-w-0">
-            <h3 class="text-lg font-medium text-gray-900 truncate">
+          <div class="flex-1 min-w-0 overflow-hidden">
+            <h3 class="text-lg font-bold text-text-primary truncate font-sans tracking-tight group-hover:text-tertiary transition-colors">
               {{ author.name }}
             </h3>
-            <p class="text-sm text-gray-500 truncate">
-              {{ t('authors.platform') }}: {{ author.platform }}
-            </p>
-            <div v-if="author.author_status" class="mt-2 flex flex-wrap gap-2 text-xs">
-              <span class="px-2 py-1 rounded bg-gray-100 text-gray-700">
-                {{ t('author.status.videos') }}: {{ author.author_status.total_videos }}
-              </span>
-              <span class="px-2 py-1 rounded bg-green-100 text-green-700">
-                {{ t('author.status.asrReady') }}: {{ author.author_status.asr_status_counts.ready }}
-              </span>
-              <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
-                {{ t('author.status.asrFallback') }}: {{ author.author_status.asr_status_counts.fallback }}
-              </span>
-              <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
-                {{ t('author.status.asrPending') }}: {{ author.author_status.asr_status_counts.pending }}
-              </span>
-              <span class="px-2 py-1 rounded bg-red-100 text-red-700">
-                {{ t('author.status.asrMissing') }}: {{ author.author_status.asr_status_counts.missing }}
-              </span>
-              <span class="px-2 py-1 rounded bg-green-100 text-green-700">
-                {{ t('author.status.summaryReady') }}: {{ author.author_status.summary_status_counts.ready }}
-              </span>
-              <span class="px-2 py-1 rounded bg-yellow-100 text-yellow-700">
-                {{ t('author.status.summaryPending') }}: {{ author.author_status.summary_status_counts.pending }}
-              </span>
-              <span class="px-2 py-1 rounded bg-amber-100 text-amber-700">
-                {{ t('author.status.summarySkipped') }}: {{ author.author_status.summary_status_counts.skipped_fallback }}
-              </span>
-              <span class="px-2 py-1 rounded bg-red-100 text-red-700">
-                {{ t('author.status.summaryBlocked') }}: {{ author.author_status.summary_status_counts.blocked }}
-              </span>
-              <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-                {{ t('author.status.qualityFull') }}: {{ author.author_status.content_quality_counts.full }}
-              </span>
-              <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-                {{ t('author.status.qualitySummary') }}: {{ author.author_status.content_quality_counts.summary }}
-              </span>
-              <span class="px-2 py-1 rounded bg-indigo-100 text-indigo-700">
-                {{ t('author.status.qualityMissing') }}: {{ author.author_status.content_quality_counts.missing }}
-              </span>
+            <div class="text-xs font-mono text-text-secondary uppercase mt-1">
+              PLATFORM: <span class="text-white">{{ author.platform }}</span>
+            </div>
+             <div class="text-[10px] font-mono text-text-secondary uppercase mt-1 truncate">
+              ID: {{ author.id.substring(0, 8) }}...
             </div>
           </div>
         </div>
+
+        <!-- Stats Grid -->
+        <div v-if="author.author_status" class="grid grid-cols-2 gap-px bg-border border border-border">
+          <div class="bg-surface p-2">
+            <div class="text-[10px] text-text-secondary uppercase">VIDEOS</div>
+            <div class="text-lg font-mono font-bold text-primary">{{ author.author_status.total_videos }}</div>
+          </div>
+          <div class="bg-surface p-2">
+             <div class="text-[10px] text-text-secondary uppercase">QUALITY_FULL</div>
+            <div class="text-lg font-mono font-bold text-tertiary">{{ author.author_status.content_quality_counts.full }}</div>
+          </div>
+          <div class="bg-surface p-2">
+             <div class="text-[10px] text-text-secondary uppercase">ASR_READY</div>
+            <div class="text-lg font-mono font-bold text-white">{{ author.author_status.asr_status_counts.ready }}</div>
+          </div>
+          <div class="bg-surface p-2">
+             <div class="text-[10px] text-text-secondary uppercase">SUM_READY</div>
+            <div class="text-lg font-mono font-bold text-white">{{ author.author_status.summary_status_counts.ready }}</div>
+          </div>
+        </div>
+        
+        <!-- Hover Decoration -->
+        <div class="absolute bottom-0 left-0 w-full h-0.5 bg-tertiary transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
       </div>
     </div>
   </div>
