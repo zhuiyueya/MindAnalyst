@@ -1,9 +1,5 @@
 from dataclasses import dataclass
 from typing import  List, Optional, cast
-import os
-import tempfile
-import uuid
-import httpx
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
@@ -14,7 +10,8 @@ from src.adapters.sources.bilibili.types import AuthorProfile, VideoItem
 from src.adapters.asr.service import ASRService
 from src.adapters.asr.types import ASRAdapterError, AsrTranscriptionResult
 from src.adapters.storage.service import StorageService
-from src.core.config import settings
+from src.adapters.media.avatar_service import AvatarService
+from src.adapters.media.audio_material_service import AudioMaterialService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,17 +38,14 @@ class TextChunk:
     text: str
 
 
-@dataclass(frozen=True, slots=True)
-class AudioContext:
-    audio_path: str
-    reuse_object: Optional[str]
-
 class IngestionWorkflow:
     def __init__(self, session: AsyncSession):
         self.session: AsyncSession = session
         self.bilibili: BilibiliSourceService = BilibiliSourceService()
         self.asr: ASRService = ASRService()
         self.storage: StorageService = StorageService()  # MinIO
+        self.avatar: AvatarService = AvatarService(self.storage)
+        self.audio_material: AudioMaterialService = AudioMaterialService(bilibili=self.bilibili, storage=self.storage)
 
     async def _get_or_create_author_in_db(self, author_data: AuthorProfile) -> Author:
         """
@@ -188,40 +182,7 @@ class IngestionWorkflow:
             await self._ingest_single_video(corrected_video, author)
 
     async def _store_author_avatar(self, avatar_url: str, author_external_id: str) -> Optional[str]:
-        if not avatar_url:
-            return None
-
-        tmp_path = None
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(avatar_url)
-                resp.raise_for_status()
-                content_type = resp.headers.get("content-type", "")
-                if "png" in content_type:
-                    ext = ".png"
-                elif "webp" in content_type:
-                    ext = ".webp"
-                elif "jpeg" in content_type or "jpg" in content_type:
-                    ext = ".jpg"
-                else:
-                    ext = os.path.splitext(avatar_url.split("?")[0])[1] or ".jpg"
-
-                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
-                    tmp_file.write(resp.content)
-                    tmp_path = tmp_file.name
-
-            object_name = f"avatars/{author_external_id}_{uuid.uuid4().hex}{ext}"
-            ref = await self.storage.put_file(tmp_path, object_name)
-            return ref.object_name
-        except Exception as e:
-            logger.warning(f"Failed to store avatar {avatar_url}: {e}")
-            return None
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except Exception as rm_e:
-                    logger.warning(f"Failed to remove temp avatar file {tmp_path}: {rm_e}")
+        return await self.avatar.store_avatar_from_url(avatar_url, author_external_id)
 
     async def ingest_from_browser(self, url: str, limit: int = 0) -> None:
         """
@@ -330,16 +291,12 @@ class IngestionWorkflow:
         """Run ASR and normalize its output into subtitle items."""
         logger.info(f"No subtitles for {content.external_id}, trying ASR...")
 
-        audio_ctx = await self._get_audio_for_asr(content, reuse_audio_only=reuse_audio_only)
-        if audio_ctx is None:
+        prepared = await self.audio_material.prepare_audio_for_asr(content.external_id, reuse_audio_only=reuse_audio_only)
+        if prepared is None:
             return []
 
         try:
-            object_name = f"{content.external_id}_{os.path.basename(audio_ctx.audio_path)}"
-            if not audio_ctx.reuse_object:
-                await self.storage.put_file(audio_ctx.audio_path, object_name)
-
-            transcription = await self.asr.transcribe_file(audio_ctx.audio_path)
+            transcription = await self.asr.transcribe_file(prepared.audio_path)
             return self._payload_to_subtitles(
                 transcription,
                 duration=video_meta.duration,
@@ -349,45 +306,7 @@ class IngestionWorkflow:
             logger.error(f"ASR failed for {content.external_id}: {asr_e}")
             return []
         finally:
-            self._cleanup_audio_file(audio_ctx.audio_path)
-
-    async def _get_audio_for_asr(self, content: ContentItem, reuse_audio_only: bool) -> Optional[AudioContext]:
-        """Resolve an audio file path for ASR, either by reusing stored audio or downloading a new one."""
-        audio_path: Optional[str] = None
-        reuse_object = self.storage.find_first_by_prefix(content.external_id)
-        reuse_object_name: Optional[str] = None
-        if reuse_object is not None:
-            reuse_object_name = reuse_object.object_name
-            local_name = os.path.basename(reuse_object_name)
-            local_path = os.path.join(settings.BILIBILI_DOWNLOAD_DIR, local_name)
-            try:
-                self.storage.get_to_file(reuse_object, local_path)
-                audio_path = local_path
-                logger.info(f"Reusing stored audio for {content.external_id}: {reuse_object_name}")
-            except Exception as exc:
-                logger.warning(f"Failed to download stored audio for {content.external_id}: {exc}")
-
-        if not audio_path and reuse_audio_only:
-            logger.warning(f"No stored audio found for {content.external_id}; skipping ASR reuse-only run.")
-            return None
-
-        if not audio_path:
-            audio = await self.bilibili.download_audio(content.external_id)
-            audio_path = audio.local_path if audio else None
-
-        if not audio_path:
-            return None
-
-        return AudioContext(audio_path=audio_path, reuse_object=reuse_object_name)
-
-    def _cleanup_audio_file(self, audio_path: str) -> None:
-        """Remove the temporary audio file if it exists."""
-        if os.path.exists(audio_path):
-            try:
-                os.remove(audio_path)
-                logger.info(f"Deleted local audio file: {audio_path}")
-            except Exception as rm_e:
-                logger.warning(f"Failed to delete {audio_path}: {rm_e}")
+            self.audio_material.cleanup_audio_file(prepared.audio_path)
 
     def _payload_to_subtitles(
         self,
