@@ -1,5 +1,6 @@
 import os
 import logging
+import datetime
 from typing import Optional
 
 from minio import Minio
@@ -117,7 +118,22 @@ class StorageService:
             ) from exc
 
     def presign_get(self, ref: StoredObjectRef, expires_in_s: Optional[int] = None) -> PresignedUrl:
-        expires = expires_in_s if expires_in_s is not None else settings.MINIO_PRESIGN_EXPIRES_S
+        expires_s = expires_in_s if expires_in_s is not None else settings.MINIO_PRESIGN_EXPIRES_S
+        if not isinstance(expires_s, int):
+            raise StorageError(
+                "Invalid expires value",
+                operation="presign_get",
+                bucket=ref.bucket,
+                object_name=ref.object_name,
+            )
+        if expires_s < 1 or expires_s > 604800:
+            raise StorageError(
+                "expires_in_s must be between 1 and 604800 seconds",
+                operation="presign_get",
+                bucket=ref.bucket,
+                object_name=ref.object_name,
+            )
+        expires = datetime.timedelta(seconds=expires_s)
         try:
             url = self._client.presigned_get_object(ref.bucket, ref.object_name, expires=expires)
             return PresignedUrl(url=url)
