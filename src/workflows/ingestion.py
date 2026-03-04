@@ -68,10 +68,10 @@ class IngestionWorkflow:
             author = result_db.scalar_one_or_none()
 
             # 存储 avatar
-            stored_avatar_url: Optional[str] = None
+            stored_avatar_object: Optional[str] = None
             if author_data.avatar_url:
                 if not author or not author.avatar_url or author.avatar_url == author_data.avatar_url:
-                    stored_avatar_url = await self._store_author_avatar(author_data.avatar_url, mid)
+                    stored_avatar_object = await self._store_author_avatar(author_data.avatar_url, mid)
 
             if not author:
                 # 创建新作者
@@ -80,7 +80,7 @@ class IngestionWorkflow:
                     external_id=mid,
                     name=author_data.name,
                     homepage_url=author_data.homepage_url,
-                    avatar_url=stored_avatar_url or author_data.avatar_url
+                    avatar_url=stored_avatar_object or author_data.avatar_url
                 )
                 self.session.add(author)
                 await self.session.commit()
@@ -90,8 +90,8 @@ class IngestionWorkflow:
                 # 更新作者信息
                 if author.name == "Unknown Author" and author_data.name != "Unknown Author":
                     author.name = author_data.name
-                if stored_avatar_url:
-                    author.avatar_url = stored_avatar_url
+                if stored_avatar_object:
+                    author.avatar_url = stored_avatar_object
                 elif not author.avatar_url and author_data.avatar_url:
                     author.avatar_url = author_data.avatar_url
                 self.session.add(author)
@@ -212,7 +212,7 @@ class IngestionWorkflow:
 
             object_name = f"avatars/{author_external_id}_{uuid.uuid4().hex}{ext}"
             ref = await self.storage.put_file(tmp_path, object_name)
-            return self.storage.presign_get(ref).url
+            return ref.object_name
         except Exception as e:
             logger.warning(f"Failed to store avatar {avatar_url}: {e}")
             return None

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from typing import Any, Optional, cast
+from urllib.parse import urlparse
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.utils import compute_status_fields
+from src.core.config import settings
+from src.adapters.storage.service import StorageService, StoredObjectRef
 from src.domain.results import AuthorDetailResult, AuthorsListResult
 from src.repositories.author_repo import AuthorRepository
 from src.repositories.content_repo import ContentRepository
@@ -23,9 +26,39 @@ class AuthorService:
         self.summaries = SummaryRepository(session)
         self.reports = AuthorReportRepository(session)
 
+    def _presign_avatar_url_if_needed(self, avatar_url: Any, storage: StorageService) -> Any:
+        if not isinstance(avatar_url, str) or not avatar_url.strip():
+            return avatar_url
+
+        raw = avatar_url.strip()
+
+        object_name: Optional[str] = None
+        if raw.startswith("avatars/"):
+            object_name = raw
+        elif raw.startswith("http://") or raw.startswith("https://"):
+            try:
+                parsed = urlparse(raw)
+                path = parsed.path.lstrip("/")
+                prefix = f"{settings.MINIO_BUCKET_NAME}/"
+                if path.startswith(prefix):
+                    object_name = path[len(prefix):]
+            except Exception:
+                object_name = None
+
+        if not object_name:
+            return avatar_url
+
+        try:
+            ref = StoredObjectRef(bucket=settings.MINIO_BUCKET_NAME, object_name=object_name)
+            return storage.presign_get(ref, expires_in_s=settings.MINIO_AVATAR_PRESIGN_EXPIRES_S).url
+        except Exception:
+            return avatar_url
+
     async def list_authors(self) -> AuthorsListResult:
         authors = await self.authors.list_all()
         authors_data: list[dict[str, Any]] = []
+
+        storage = StorageService()
 
         for author in authors:
             contents = await self.contents.list_by_author(str(author.id))
@@ -44,6 +77,7 @@ class AuthorService:
                 quality_counts[content.content_quality] = quality_counts.get(content.content_quality, 0) + 1
 
             author_data = author.model_dump()
+            author_data["avatar_url"] = self._presign_avatar_url_if_needed(author_data.get("avatar_url"), storage)
             author_data["author_status"] = {
                 "total_videos": len(contents),
                 "asr_status_counts": asr_counts,
@@ -58,6 +92,8 @@ class AuthorService:
         author = await self.authors.get(author_id)
         if not author:
             raise HTTPException(status_code=404, detail="Author not found")
+
+        storage = StorageService()
 
         reports = await self.reports.list_by_author_desc(author_id)
         reports_data: list[dict[str, Any]] = [report.model_dump() for report in reports]
@@ -106,7 +142,10 @@ class AuthorService:
         }
 
         return AuthorDetailResult(
-            author=author.model_dump(),
+            author={
+                **author.model_dump(),
+                "avatar_url": self._presign_avatar_url_if_needed(getattr(author, "avatar_url", None), storage),
+            },
             latest_report=latest_report,
             reports=reports_data,
             reports_by_type=reports_by_type,

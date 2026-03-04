@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
     MINIO_BUCKET_NAME: str = "mind-analyst-files"
     MINIO_PRESIGN_EXPIRES_S: int = 7 * 24 * 3600
+    MINIO_AVATAR_PRESIGN_EXPIRES_S: int = 3600
 
     BILIBILI_USER_AGENT: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
