@@ -48,7 +48,7 @@ onMounted(async () => {
               v-if="author.avatar_url" 
               :src="author.avatar_url" 
               alt="" 
-              class="h-16 w-16 grayscale group-hover:grayscale-0 transition-all border border-border"
+              class="h-16 w-16 transition-all border border-border"
             >
             <div v-else class="h-16 w-16 bg-surface border border-border flex items-center justify-center text-text-secondary text-xl font-bold font-mono">
               {{ author.name.charAt(0) }}

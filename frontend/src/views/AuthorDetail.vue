@@ -344,7 +344,7 @@ const triggerReprocessAsr = async () => {
              <img 
               v-if="author.avatar_url" 
               :src="author.avatar_url" 
-              class="h-32 w-32 grayscale border-2 border-primary p-1"
+              class="h-32 w-32 border-2 border-primary p-1"
             >
              <div v-else class="h-32 w-32 bg-surface border-2 border-primary flex items-center justify-center text-text-secondary text-4xl font-bold font-mono">
               {{ author.name.charAt(0) }}
