@@ -154,99 +154,83 @@ const formatTime = (ms) => {
     > {{ t('videoDetail.loadingMedia') }}
   </div>
   <div v-else class="flex flex-col h-[calc(100vh-80px)] overflow-hidden">
-    <!-- Header (Fixed) -->
-    <div class="terminal-card mb-6 flex-shrink-0">
-      <div class="flex items-center justify-between mb-4 border-b border-border pb-2">
-         <button @click="$router.back()" class="text-xs text-text-secondary hover:text-primary flex items-center">
-           &lt; {{ t('common.backToAuthor') }}
-         </button>
-         <span class="text-[10px] text-text-secondary uppercase">MEDIA_FILE</span>
-      </div>
-
-      <div class="flex flex-col md:flex-row justify-between items-start gap-4">
-        <div>
-          <h2 class="text-2xl font-bold text-text-primary mb-2 font-sans tracking-tight">{{ video.title }}</h2>
-          <div class="flex flex-wrap items-center gap-4 text-xs font-mono text-text-secondary">
-             <span>{{ t('videoDetail.published') }}: <span class="text-white">{{ formatDate(video.published_at) }}</span></span>
-             <span>{{ t('common.type') }}: <span class="text-white">{{ video.content_type || t('videoDetail.generic') }}</span></span>
+    <!-- Header (Fixed & Compact) -->
+    <div class="terminal-card mb-4 flex-shrink-0 p-4">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-3 mb-1">
+             <button @click="$router.back()" class="text-xs text-text-secondary hover:text-primary flex-shrink-0">
+               &lt; {{ t('common.backToAuthor') }}
+             </button>
+             <div class="h-3 w-px bg-border"></div>
+             <h2 class="text-lg font-bold text-text-primary truncate font-sans tracking-tight">{{ video.title }}</h2>
+          </div>
+          
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-mono text-text-secondary">
+             <span>{{ formatDate(video.published_at) }}</span>
+             <span class="text-border">|</span>
+             <span>{{ video.content_type || t('videoDetail.generic') }}</span>
+             <span class="text-border">|</span>
              <a :href="video.url" target="_blank" class="text-tertiary hover:underline uppercase">[{{ t('videoDetail.openSource') }}]</a>
+             
+             <!-- Status Badges Inline -->
+             <div class="flex items-center gap-2 ml-2">
+                <span :class="video.asr_status === 'ready' ? 'text-primary' : 'text-secondary'" class="uppercase">
+                  ASR:{{ statusText(video.asr_status) }}
+                </span>
+                <span :class="video.summary_status === 'ready' ? 'text-primary' : 'text-secondary'" class="uppercase">
+                  SUM:{{ statusText(video.summary_status) }}
+                </span>
+                <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'" class="uppercase">
+                  QUAL:{{ qualityText(video.content_quality) }}
+                </span>
+             </div>
           </div>
         </div>
-        
-         <div class="flex flex-wrap gap-2">
-            <span :class="video.asr_status === 'ready' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
-              {{ t('authorDetail.asr') }}: {{ statusText(video.asr_status) }}
-            </span>
-            <span :class="video.summary_status === 'ready' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
-              {{ t('authorDetail.sum') }}: {{ statusText(video.summary_status) }}
-            </span>
-            <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
-              {{ t('authorDetail.qual') }}: {{ qualityText(video.content_quality) }}
-            </span>
-             <span v-if="summary && summary.video_category" class="text-tertiary text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
-              {{ t('authorDetail.cat') }}: {{ summary.video_category }}
-            </span>
-         </div>
+
+        <!-- Compact Actions -->
+        <div class="flex flex-col items-end gap-2 flex-shrink-0">
+           <div class="flex items-center gap-2">
+              <input
+                v-model="selectedContentType"
+                :placeholder="t('author.authorTypePlaceholder')"
+                class="terminal-input text-[10px] py-1 w-24 h-6"
+              />
+              <button @click="saveContentType" :disabled="processing" class="terminal-button text-[10px] py-0 px-2 h-6">
+                {{ t('common.save') }}
+              </button>
+           </div>
+           <div class="flex items-center gap-1">
+              <button @click="triggerResummarize" :disabled="processing" class="terminal-button text-[10px] py-0 px-2 h-6">
+                {{ t('video.resummarize').toUpperCase() }}
+              </button>
+              <button @click="triggerReprocessAsr" :disabled="processing" class="terminal-button-secondary text-[10px] py-0 px-2 h-6">
+                ASR
+              </button>
+           </div>
+        </div>
       </div>
 
-      <div class="border-t border-border mt-6 pt-4">
-         <div v-if="videoShortSummary" class="mb-4">
-            <div class="text-[10px] text-text-secondary uppercase mb-1">{{ t('videoDetail.shortSummary') }}</div>
-            <div class="text-sm text-text-primary font-mono border-l-2 border-primary pl-3 py-1 bg-primary/5">
-              {{ videoShortSummary }}
+      <!-- Collapsible Summary/Keywords -->
+      <details class="mt-2 text-[10px] text-text-secondary cursor-pointer group">
+         <summary class="hover:text-primary select-none list-none flex items-center gap-2">
+            <span class="border border-border px-1 group-open:bg-primary group-open:text-black transition-colors">INFO</span>
+            <span v-if="!videoShortSummary" class="italic opacity-50">{{ t('videoDetail.noSummaryData') }}</span>
+            <span v-else class="truncate max-w-xl text-text-primary">{{ videoShortSummary }}</span>
+         </summary>
+         <div class="mt-2 pl-2 border-l border-border space-y-2 bg-surface/50 p-2">
+            <div v-if="videoShortSummary">
+               <span class="text-tertiary uppercase mr-2">{{ t('videoDetail.shortSummary') }}:</span>
+               <span class="text-text-primary">{{ videoShortSummary }}</span>
+            </div>
+            <div v-if="videoShortKeywords.length" class="flex flex-wrap gap-1">
+               <span class="text-tertiary uppercase mr-2">{{ t('videoDetail.keywords') }}:</span>
+               <span v-for="kw in videoShortKeywords" :key="kw" class="px-1 border border-border text-text-primary bg-black/20">
+                 {{ kw }}
+               </span>
             </div>
          </div>
-         
-         <div v-if="videoShortKeywords.length" class="flex flex-wrap gap-2">
-            <span class="text-[10px] text-text-secondary uppercase self-center">{{ t('videoDetail.keywords') }}:</span>
-            <span
-              v-for="kw in videoShortKeywords"
-              :key="kw"
-              class="px-2 py-0.5 border border-tertiary/30 text-tertiary text-[10px] font-mono"
-            >
-              {{ kw }}
-            </span>
-         </div>
-      </div>
-
-      <div class="mt-6 flex flex-wrap items-center gap-3">
-        <div class="flex items-center space-x-2">
-          <input
-            v-model="selectedContentType"
-            :placeholder="t('author.authorTypePlaceholder')"
-            class="terminal-input text-xs w-32"
-          />
-          <button
-            @click="saveContentType"
-            :disabled="processing"
-            class="terminal-button text-xs py-1 px-2"
-          >
-            {{ t('common.save') }}
-          </button>
-        </div>
-        <div class="h-6 w-px bg-border mx-2"></div>
-        <button 
-          @click="triggerResummarize"
-          :disabled="processing"
-          class="terminal-button text-xs py-1 px-3"
-        >
-          {{ t('video.resummarize').toUpperCase() }}
-        </button>
-        <button 
-          @click="triggerResummarize(true)"
-          :disabled="processing"
-          class="terminal-button-secondary text-xs py-1 px-3"
-        >
-          {{ t('video.resummarizeIncludeFallback').toUpperCase() }}
-        </button>
-        <button 
-          @click="triggerReprocessAsr"
-          :disabled="processing"
-          class="terminal-button-secondary text-xs py-1 px-3"
-        >
-          {{ t('video.reprocessAsr').toUpperCase() }}
-        </button>
-      </div>
+      </details>
     </div>
 
     <!-- Playback (Fixed if present, scrollable if large?) -> Keep it scrollable with content -->

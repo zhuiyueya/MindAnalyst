@@ -22,6 +22,8 @@ const filters = ref({
   end_time: ''
 })
 
+const isFilterOpen = ref(false)
+
 const hasPrev = computed(() => offset.value > 0)
 const hasNext = computed(() => offset.value + limit.value < total.value)
 
@@ -119,52 +121,52 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Filter Panel (Fixed height or collapsible, but here let's keep it fixed and scroll the list) -->
-    <div class="terminal-card flex-shrink-0">
-      <div class="text-[10px] font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2">{{ t('llmLogs.queryParameters') }}</div>
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <div>
-          <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.taskType') }}</label>
-          <input v-model="filters.task_type" class="terminal-input text-xs" placeholder="e.g. summary.single" />
+    <!-- Filter Panel (Collapsible) -->
+    <details class="terminal-card flex-shrink-0 group" :open="isFilterOpen">
+      <summary 
+        class="text-[10px] font-bold text-text-secondary uppercase mb-2 border-b border-border pb-2 cursor-pointer hover:text-primary select-none flex items-center justify-between"
+        @click.prevent="isFilterOpen = !isFilterOpen"
+      >
+        <span>{{ t('llmLogs.queryParameters') }}</span>
+        <span class="text-xs">{{ isFilterOpen ? '[-]' : '[+]' }}</span>
+      </summary>
+      
+      <div v-if="isFilterOpen" class="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-8 mb-4">
+        <div class="col-span-1">
+          <input v-model="filters.task_type" class="terminal-input text-[10px] py-1 h-6" :placeholder="t('llmLogs.filters.taskType')" />
         </div>
-        <div>
-          <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.contentType') }}</label>
-          <input v-model="filters.content_type" class="terminal-input text-xs" placeholder="e.g. insight" />
+        <div class="col-span-1">
+          <input v-model="filters.content_type" class="terminal-input text-[10px] py-1 h-6" :placeholder="t('llmLogs.filters.contentType')" />
         </div>
-        <div>
-          <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.profileKey') }}</label>
-          <input v-model="filters.profile_key" class="terminal-input text-xs" placeholder="e.g. v10" />
+        <div class="col-span-1">
+          <input v-model="filters.profile_key" class="terminal-input text-[10px] py-1 h-6" :placeholder="t('llmLogs.filters.profileKey')" />
         </div>
-        <div>
-          <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.status') }}</label>
-          <input v-model="filters.status" class="terminal-input text-xs" placeholder="e.g. success" />
+        <div class="col-span-1">
+          <input v-model="filters.status" class="terminal-input text-[10px] py-1 h-6" :placeholder="t('llmLogs.filters.status')" />
         </div>
-        <div>
-          <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.model') }}</label>
-          <input v-model="filters.model" class="terminal-input text-xs" placeholder="e.g. Qwen2.5" />
+        <div class="col-span-1">
+          <input v-model="filters.model" class="terminal-input text-[10px] py-1 h-6" :placeholder="t('llmLogs.filters.model')" />
         </div>
-        <div>
-          <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.limit') }}</label>
-          <input v-model.number="limit" type="number" min="1" max="200" class="terminal-input text-xs" />
+        <div class="col-span-1">
+          <input v-model.number="limit" type="number" min="1" max="200" class="terminal-input text-[10px] py-1 h-6" :placeholder="t('llmLogs.filters.limit')" />
         </div>
-         <div>
-          <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.startTime') }}</label>
-          <input v-model="filters.start_time" type="datetime-local" class="terminal-input text-xs" />
+         <div class="col-span-1">
+          <input v-model="filters.start_time" type="datetime-local" class="terminal-input text-[10px] py-1 h-6" />
         </div>
-         <div>
-          <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.endTime') }}</label>
-          <input v-model="filters.end_time" type="datetime-local" class="terminal-input text-xs" />
+         <div class="col-span-1">
+          <input v-model="filters.end_time" type="datetime-local" class="terminal-input text-[10px] py-1 h-6" />
         </div>
       </div>
-      <div class="flex flex-wrap gap-2 mt-6">
-        <button class="terminal-button text-xs py-1 px-3" @click="applyFilters">
+      
+      <div v-if="isFilterOpen" class="flex flex-wrap gap-2 pb-2">
+        <button class="terminal-button text-[10px] py-0 px-2 h-6" @click="applyFilters">
           {{ t('llmLogs.applyFilters') }}
         </button>
-        <button class="terminal-button-secondary text-xs py-1 px-3" @click="resetFilters">
+        <button class="terminal-button-secondary text-[10px] py-0 px-2 h-6" @click="resetFilters">
           {{ t('llmLogs.resetFilters') }}
         </button>
       </div>
-    </div>
+    </details>
 
     <div v-if="loading" class="text-center py-10 font-mono text-primary animate-pulse">
       > {{ t('llmLogs.fetchingLogs') }}
