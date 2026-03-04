@@ -26,12 +26,12 @@ onMounted(async () => {
         <span class="text-tertiary">/</span> {{ t('authors.title') }}
       </h2>
       <div class="font-mono text-xs text-text-secondary">
-        TOTAL_RECORDS: <span class="text-tertiary">{{ authors.length }}</span>
+        {{ t('authorList.totalRecords') }}: <span class="text-tertiary">{{ authors.length }}</span>
       </div>
     </div>
 
     <div v-if="loading" class="text-center py-20 font-mono text-primary animate-pulse">
-      > SYSTEM_LOADING_DATA...
+      > {{ t('authorList.systemLoading') }}
     </div>
     
     <div v-else class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -62,10 +62,10 @@ onMounted(async () => {
               {{ author.name }}
             </h3>
             <div class="text-xs font-mono text-text-secondary uppercase mt-1">
-              PLATFORM: <span class="text-white">{{ author.platform }}</span>
+              {{ t('authors.platform') }}: <span class="text-white">{{ author.platform }}</span>
             </div>
              <div class="text-[10px] font-mono text-text-secondary uppercase mt-1 truncate">
-              ID: {{ author.id.substring(0, 8) }}...
+              {{ t('authorList.id') }}: {{ author.id.substring(0, 8) }}...
             </div>
           </div>
         </div>
@@ -73,19 +73,19 @@ onMounted(async () => {
         <!-- Stats Grid -->
         <div v-if="author.author_status" class="grid grid-cols-2 gap-px bg-border border border-border">
           <div class="bg-surface p-2">
-            <div class="text-[10px] text-text-secondary uppercase">VIDEOS</div>
+            <div class="text-[10px] text-text-secondary uppercase">{{ t('authorList.videos') }}</div>
             <div class="text-lg font-mono font-bold text-primary">{{ author.author_status.total_videos }}</div>
           </div>
           <div class="bg-surface p-2">
-             <div class="text-[10px] text-text-secondary uppercase">QUALITY_FULL</div>
+             <div class="text-[10px] text-text-secondary uppercase">{{ t('authorList.qualityFull') }}</div>
             <div class="text-lg font-mono font-bold text-tertiary">{{ author.author_status.content_quality_counts.full }}</div>
           </div>
           <div class="bg-surface p-2">
-             <div class="text-[10px] text-text-secondary uppercase">ASR_READY</div>
+             <div class="text-[10px] text-text-secondary uppercase">{{ t('authorList.asrReady') }}</div>
             <div class="text-lg font-mono font-bold text-white">{{ author.author_status.asr_status_counts.ready }}</div>
           </div>
           <div class="bg-surface p-2">
-             <div class="text-[10px] text-text-secondary uppercase">SUM_READY</div>
+             <div class="text-[10px] text-text-secondary uppercase">{{ t('authorList.sumReady') }}</div>
             <div class="text-lg font-mono font-bold text-white">{{ author.author_status.summary_status_counts.ready }}</div>
           </div>
         </div>

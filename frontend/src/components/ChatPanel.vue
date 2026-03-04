@@ -93,7 +93,7 @@ const triggerReindexAuthor = async () => {
     <div class="px-6 py-3 border-b border-border bg-surface flex flex-wrap items-center justify-between gap-4">
       <div class="flex items-center space-x-4">
         <div class="flex items-center space-x-2">
-          <span class="text-[10px] font-bold text-text-secondary uppercase">SCOPE:</span>
+          <span class="text-[10px] font-bold text-text-secondary uppercase">{{ t('chat.scope') }}:</span>
           <select 
             v-model="selectedAuthorId" 
             class="bg-background border border-border text-primary text-xs font-mono py-1 px-2 focus:outline-none focus:border-primary"
@@ -105,7 +105,7 @@ const triggerReindexAuthor = async () => {
           </select>
         </div>
         <div class="flex items-center space-x-2">
-           <span class="text-[10px] font-bold text-text-secondary uppercase">FILTER:</span>
+           <span class="text-[10px] font-bold text-text-secondary uppercase">{{ t('chat.filter') }}:</span>
            <input
             v-model="tagFilter"
             type="text"
@@ -121,11 +121,11 @@ const triggerReindexAuthor = async () => {
           :disabled="isReindexing || !selectedAuthorId"
           class="text-[10px] font-bold text-text-secondary hover:text-primary disabled:opacity-30 uppercase tracking-tighter"
         >
-          [REINDEX_SCOPE]
+          [{{ t('chat.reindexScope') }}]
         </button>
         <div class="h-4 w-px bg-border"></div>
         <button @click="fetchAuthors" class="text-[10px] font-bold text-tertiary hover:text-white uppercase tracking-tighter">
-          [REFRESH_AUTHORS]
+          [{{ t('chat.refreshAuthors') }}]
         </button>
       </div>
     </div>
@@ -140,9 +140,9 @@ const triggerReindexAuthor = async () => {
         <!-- Role & Timestamp -->
         <div class="flex items-center space-x-2 mb-2">
            <span :class="[msg.role === 'user' ? 'text-secondary' : 'text-primary', 'text-[10px] font-bold uppercase']">
-             {{ msg.role === 'user' ? '>> USER_INPUT' : '>> ANALYST_CORE' }}
+             {{ msg.role === 'user' ? `>> ${t('chat.userInput')}` : `>> ${t('chat.analystCore')}` }}
            </span>
-           <span class="text-[10px] text-text-secondary font-mono">[{{ msg.timestamp || 'INIT' }}]</span>
+           <span class="text-[10px] text-text-secondary font-mono">[{{ msg.timestamp || t('chat.init') }}]</span>
         </div>
 
         <!-- Content -->
@@ -157,7 +157,7 @@ const triggerReindexAuthor = async () => {
           
           <!-- Citations / Sources -->
           <div v-if="msg.citations && msg.citations.length" class="mt-6 pt-4 border-t border-border">
-            <div class="text-[10px] font-bold text-tertiary uppercase mb-3">Sourced_Documents:</div>
+            <div class="text-[10px] font-bold text-tertiary uppercase mb-3">{{ t('chat.sourcedDocuments') }}:</div>
             <div class="space-y-3">
               <div v-for="(cit, cIdx) in msg.citations" :key="cIdx" class="text-xs group">
                 <div class="flex items-start gap-3">
@@ -165,9 +165,9 @@ const triggerReindexAuthor = async () => {
                   <div class="flex-1">
                     <div class="flex items-center gap-2 flex-wrap">
                       <a v-if="cit.url" :href="cit.url" target="_blank" class="text-text-primary font-bold hover:text-tertiary transition-colors">
-                        {{ cit.title || 'UNTITLED_REF' }}
+                        {{ cit.title || t('chat.untitledRef') }}
                       </a>
-                      <span v-else class="text-text-primary font-bold">{{ cit.title || 'UNTITLED_REF' }}</span>
+                      <span v-else class="text-text-primary font-bold">{{ cit.title || t('chat.untitledRef') }}</span>
                       <span v-if="cit.tag" class="text-[9px] px-1 border border-border text-text-secondary uppercase">{{ cit.tag }}</span>
                     </div>
                     <div class="mt-1 text-text-secondary line-clamp-2 italic group-hover:line-clamp-none transition-all">
@@ -183,11 +183,11 @@ const triggerReindexAuthor = async () => {
 
       <!-- Typing Indicator -->
       <div v-if="isLoading" class="flex flex-col">
-         <div class="text-[10px] font-bold text-primary uppercase mb-2">>> ANALYST_CORE</div>
+         <div class="text-[10px] font-bold text-primary uppercase mb-2">>> {{ t('chat.analystCore') }}</div>
          <div class="p-4 border border-primary/30 bg-primary/5">
             <div class="flex space-x-1">
               <div class="w-1.5 h-3 bg-primary animate-pulse"></div>
-              <span class="text-xs text-primary font-mono animate-pulse">PROCESSING_QUERY...</span>
+              <span class="text-xs text-primary font-mono animate-pulse">{{ t('chat.processingQuery') }}</span>
             </div>
          </div>
       </div>
@@ -212,7 +212,7 @@ const triggerReindexAuthor = async () => {
           :disabled="isLoading || !query.trim()"
           class="terminal-button py-1 px-4 text-xs"
         >
-          EXECUTE
+          {{ t('chat.execute') }}
         </button>
       </div>
     </div>

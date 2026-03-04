@@ -9,11 +9,35 @@
     "languageZh": "中文",
     "languageEn": "English"
   },
+  "app": {
+    "sysTime": "系统时间",
+    "apiStat": "API状态",
+    "dbConn": "数据库",
+    "online": "在线",
+    "active": "活跃",
+    "version": "版本"
+  },
   "dashboard": {
     "title": "欢迎使用 Mind Analyst",
     "subtitle": "你的 Bilibili 创作者知识库。",
     "exploreAuthors": "浏览作者",
-    "ingestContent": "采集内容"
+    "ingestContent": "采集内容",
+    "currentSession": "当前会话",
+    "operationModules": "操作模块",
+    "secLevel1": "安全等级_1",
+    "cmdIngest": "指令_01",
+    "cmdAuthors": "指令_02",
+    "cmdChat": "指令_03",
+    "cmdLogs": "指令_04",
+    "chatInterface": "对话终端",
+    "systemLogs": "系统日志",
+    "systemMetrics": "系统指标",
+    "live": "实时",
+    "vectorIndexLoad": "向量索引负载",
+    "activeNodes": "活跃节点",
+    "queryLatency": "查询延迟",
+    "ingestRate": "采集速率",
+    "totalTokens": "总 Token"
   },
   "common": {
     "loading": "加载中...",
@@ -56,6 +80,15 @@
     "title": "作者",
     "platform": "平台"
   },
+  "authorList": {
+    "totalRecords": "总记录数",
+    "systemLoading": "系统正在加载数据...",
+    "id": "ID",
+    "videos": "视频数",
+    "qualityFull": "完整质量",
+    "asrReady": "ASR就绪",
+    "sumReady": "摘要就绪"
+  },
   "author": {
     "authorTypeLabel": "作者类型",
     "authorTypePlaceholder": "例如：insight / howto",
@@ -95,6 +128,23 @@
       "qualityMissing": "内容缺失"
     }
   },
+  "authorDetail": {
+    "accessingArchives": "正在访问安全归档...",
+    "status": "状态",
+    "active": "活跃",
+    "totalVids": "视频总数",
+    "asrCoverage": "ASR覆盖率",
+    "tags": "标签",
+    "controlPanel": "控制面板",
+    "advancedOperations": "高级操作",
+    "type": "类型",
+    "cat": "分类",
+    "date": "日期",
+    "asr": "ASR",
+    "sum": "摘要",
+    "qual": "质量",
+    "open": "打开"
+  },
   "video": {
     "originalMedia": "原始音频/视频",
     "audioNotSupported": "你的浏览器不支持音频播放。",
@@ -118,6 +168,21 @@
     "confirmResummarizeIncludeFallback": "重新总结该视频（包含回退转写）？",
     "confirmReprocessAsr": "重新抓取该视频的转写（ASR/字幕）？"
   },
+  "videoDetail": {
+    "loadingMedia": "正在加载媒体数据...",
+    "published": "发布于",
+    "generic": "通用",
+    "openSource": "打开源",
+    "shortSummary": "短摘要",
+    "keywords": "关键词",
+    "mediaPlayback": "媒体播放",
+    "analysisSummary": "分析摘要",
+    "processed": "已处理",
+    "noSummaryData": "无摘要数据",
+    "rawTranscript": "原始转写",
+    "segments": "片段",
+    "noTranscriptData": "无转写数据"
+  },
   "rag": {
     "reindexAuthor": "重建 RAG 索引（当前作者）",
     "reindexAll": "重建 RAG 索引（全量作者）",
@@ -137,7 +202,15 @@
     "step1": "系统将打开浏览器访问作者的 Space 页面。",
     "step2": "提取视频链接（最多为你设置的数量）。",
     "step3": "对每个视频下载音频、转写并向量化内容。",
-    "step4": "完成后即可在对话页与该作者进行交流。"
+    "step4": "完成后即可在对话页与该作者进行交流。",
+    "protocol": "协议",
+    "bilibiliExtraction": "Bilibili数据提取",
+    "targetIdentifier": "目标标识符 (MID)",
+    "fetchLimit": "抓取限制 (视频数)",
+    "processingRequest": "正在处理请求...",
+    "systemOutputLog": "系统输出日志",
+    "successLabel": "成功",
+    "errorLabel": "错误"
   },
   "chat": {
     "welcome": "你好！我是你的 Mind Analyst，可以向我提问已采集的视频内容。",
@@ -148,7 +221,17 @@
     "tagPlaceholder": "标签过滤（逗号分隔，例如：观点,金句）",
     "askPlaceholder": "请输入问题...",
     "send": "发送",
-    "errorPrefix": "错误："
+    "errorPrefix": "错误：",
+    "scope": "范围",
+    "filter": "过滤",
+    "reindexScope": "重构索引",
+    "userInput": "用户输入",
+    "analystCore": "分析核心",
+    "init": "初始化",
+    "processingQuery": "正在处理查询...",
+    "execute": "执行",
+    "sourcedDocuments": "来源文档",
+    "untitledRef": "未命名引用"
   },
   "llmLogs": {
     "title": "LLM 调用日志",
@@ -182,6 +265,19 @@
       "prompts": "提示词",
       "response": "模型返回",
       "meta": "元信息"
-    }
+    },
+    "systemEventStream": "系统事件流",
+    "recording": "记录中",
+    "refreshStream": "刷新流",
+    "queryParameters": "查询参数",
+    "fetchingLogs": "正在获取日志...",
+    "totalRecords": "总记录数",
+    "noDataFound": "未找到数据",
+    "content": "内容",
+    "profile": "配置",
+    "model": "模型",
+    "tokens": "Tokens",
+    "truncated": "截断",
+    "errorLabel": "错误"
   }
 }

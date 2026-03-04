@@ -325,7 +325,7 @@ const triggerReprocessAsr = async () => {
 
 <template>
   <div v-if="loading" class="text-center py-20 font-mono text-primary animate-pulse">
-    > ACCESSING_SECURE_ARCHIVES...
+    > {{ t('authorDetail.accessingArchives') }}
   </div>
   <div v-else class="grid grid-cols-1 lg:grid-cols-12 gap-8">
     
@@ -351,25 +351,25 @@ const triggerReprocessAsr = async () => {
 
         <div class="border-t border-border pt-4 space-y-3 font-mono text-xs">
            <div class="flex justify-between">
-            <span class="text-text-secondary">STATUS</span>
-            <span class="text-primary">ACTIVE</span>
+            <span class="text-text-secondary">{{ t('authorDetail.status') }}</span>
+            <span class="text-primary">{{ t('authorDetail.active') }}</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-text-secondary">TOTAL_VIDS</span>
+            <span class="text-text-secondary">{{ t('authorDetail.totalVids') }}</span>
             <span class="text-white">{{ authorStatus?.total_videos || 0 }}</span>
           </div>
           <div class="flex justify-between">
-             <span class="text-text-secondary">ASR_COVERAGE</span>
+             <span class="text-text-secondary">{{ t('authorDetail.asrCoverage') }}</span>
              <span class="text-white">{{ authorStatus?.asr_status_counts.ready || 0 }}</span>
           </div>
           <div class="flex justify-between">
-             <span class="text-text-secondary">QUALITY_FULL</span>
+             <span class="text-text-secondary">{{ t('authorList.qualityFull') }}</span>
              <span class="text-white">{{ authorStatus?.content_quality_counts.full || 0 }}</span>
           </div>
         </div>
 
         <div v-if="authorCategories.length" class="mt-4 pt-4 border-t border-border">
-          <div class="text-[10px] text-text-secondary uppercase mb-2">TAGS</div>
+          <div class="text-[10px] text-text-secondary uppercase mb-2">{{ t('authorDetail.tags') }}</div>
           <div class="flex flex-wrap gap-2">
             <span
               v-for="category in authorCategories"
@@ -386,7 +386,7 @@ const triggerReprocessAsr = async () => {
       <div class="terminal-card">
         <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 flex items-center">
           <span class="w-1.5 h-1.5 bg-secondary mr-2"></span>
-          CONTROL_PANEL
+          {{ t('authorDetail.controlPanel') }}
         </h3>
         
         <div class="space-y-3">
@@ -397,7 +397,7 @@ const triggerReprocessAsr = async () => {
               class="terminal-input text-xs"
             />
             <button @click="saveAuthorType" :disabled="processing" class="terminal-button text-xs py-1 px-2">
-              SAVE
+              {{ t('common.save') }}
             </button>
           </div>
 
@@ -417,7 +417,7 @@ const triggerReprocessAsr = async () => {
           </div>
           
            <details class="text-[10px] text-text-secondary cursor-pointer mt-4">
-            <summary class="hover:text-primary">ADVANCED_OPERATIONS</summary>
+            <summary class="hover:text-primary">{{ t('authorDetail.advancedOperations') }}</summary>
             <div class="grid grid-cols-1 gap-2 mt-2 pl-2 border-l border-border">
               <button @click="triggerResummarizePending" class="text-left hover:text-white">>> {{ t('author.resummarizePending') }}</button>
               <button @click="triggerCompressShortSummaries" class="text-left hover:text-white">>> {{ t('author.compressShortSummaries') }}</button>
@@ -452,7 +452,7 @@ const triggerReprocessAsr = async () => {
       <div v-if="activeTab === 'report'" class="terminal-card min-h-[500px]">
         <div class="flex flex-wrap gap-4 mb-6 border-b border-border pb-4">
            <div v-if="reportTypes.length" class="flex items-center gap-2">
-            <span class="text-xs text-text-secondary uppercase">TYPE:</span>
+            <span class="text-xs text-text-secondary uppercase">{{ t('authorDetail.type') }}:</span>
             <button
               v-for="type in reportTypes"
               :key="type"
@@ -463,7 +463,7 @@ const triggerReprocessAsr = async () => {
             </button>
           </div>
            <div v-if="categoryReportKeys.length" class="flex items-center gap-2">
-            <span class="text-xs text-text-secondary uppercase">CAT:</span>
+            <span class="text-xs text-text-secondary uppercase">{{ t('authorDetail.cat') }}:</span>
              <button
               v-for="cat in categoryReportKeys"
               :key="cat"
@@ -490,11 +490,11 @@ const triggerReprocessAsr = async () => {
                 {{ video.title }}
               </h4>
               <div class="flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-mono text-text-secondary uppercase mb-3">
-                <span>DATE: {{ formatDate(video.published_at) }}</span>
-                <span>TYPE: {{ video.type }}</span>
-                <span :class="statusClass(video.asr_status)">ASR: {{ statusText(video.asr_status) }}</span>
-                <span :class="statusClass(video.summary_status)">SUM: {{ statusText(video.summary_status) }}</span>
-                <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'">QUAL: {{ qualityText(video.content_quality) }}</span>
+                <span>{{ t('authorDetail.date') }}: {{ formatDate(video.published_at) }}</span>
+                <span>{{ t('authorDetail.type') }}: {{ video.type }}</span>
+                <span :class="statusClass(video.asr_status)">{{ t('authorDetail.asr') }}: {{ statusText(video.asr_status) }}</span>
+                <span :class="statusClass(video.summary_status)">{{ t('authorDetail.sum') }}: {{ statusText(video.summary_status) }}</span>
+                <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'">{{ t('authorDetail.qual') }}: {{ qualityText(video.content_quality) }}</span>
               </div>
               
               <div v-if="videoShortSummary(video)" class="text-xs text-text-primary/80 font-mono pl-3 border-l-2 border-border group-hover:border-primary transition-colors">
@@ -505,7 +505,7 @@ const triggerReprocessAsr = async () => {
                  @click="$router.push(`/videos/${video.id}`)"
                  class="ml-4 text-tertiary text-xs hover:underline uppercase"
                >
-                 [OPEN]
+                 [{{ t('authorDetail.open') }}]
              </button>
           </div>
         </div>

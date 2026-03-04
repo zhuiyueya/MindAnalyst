@@ -12,13 +12,13 @@ const setLocale = (value) => {
   localStorage.setItem('lang', value)
 }
 
-const navItems = [
-  { path: '/', label: 'DASHBOARD', icon: '■' },
-  { path: '/authors', label: 'AUTHORS', icon: '◈' },
-  { path: '/ingest', label: 'INGEST', icon: '📥' },
-  { path: '/chat', label: 'CHAT', icon: '💬' },
-  { path: '/llm-calls', label: 'LOGS', icon: '⚡' },
-]
+const navItems = computed(() => [
+  { path: '/', label: t('dashboard.operationModules'), icon: '■' },
+  { path: '/authors', label: t('nav.authors'), icon: '◈' },
+  { path: '/ingest', label: t('nav.ingest'), icon: '📥' },
+  { path: '/chat', label: t('nav.chat'), icon: '💬' },
+  { path: '/llm-calls', label: t('nav.llmLogs'), icon: '⚡' },
+])
 
 const currentTime = ref(new Date().toLocaleTimeString())
 setInterval(() => {
@@ -54,16 +54,16 @@ setInterval(() => {
       <div class="p-6 border-t border-border text-xs text-text-secondary space-y-4">
         <div class="space-y-1 font-mono">
           <div class="flex justify-between">
-            <span>SYS_TIME</span>
+            <span>{{ t('app.sysTime') }}</span>
             <span class="text-primary">{{ currentTime }}</span>
           </div>
           <div class="flex justify-between">
-            <span>API_STAT</span>
-            <span class="text-primary">ONLINE</span>
+            <span>{{ t('app.apiStat') }}</span>
+            <span class="text-primary">{{ t('app.online') }}</span>
           </div>
           <div class="flex justify-between">
-            <span>DB_CONN</span>
-            <span class="text-primary">ACTIVE</span>
+            <span>{{ t('app.dbConn') }}</span>
+            <span class="text-primary">{{ t('app.active') }}</span>
           </div>
         </div>
 

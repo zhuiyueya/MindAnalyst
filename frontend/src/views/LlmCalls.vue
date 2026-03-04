@@ -108,20 +108,20 @@ onMounted(() => {
           <span class="text-secondary mr-2">>></span> {{ t('llmLogs.title') }}
         </h2>
         <p class="font-mono text-xs text-text-secondary mt-1 pl-8">
-          SYSTEM_EVENT_STREAM // RECORDING
+          {{ t('llmLogs.systemEventStream') }} // {{ t('llmLogs.recording') }}
         </p>
       </div>
       <button
         class="terminal-button text-xs"
         @click="fetchLogs(true)"
       >
-        [REFRESH_STREAM]
+        [{{ t('llmLogs.refreshStream') }}]
       </button>
     </div>
 
     <!-- Filter Panel -->
     <div class="terminal-card">
-      <div class="text-[10px] font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2">QUERY_PARAMETERS</div>
+      <div class="text-[10px] font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2">{{ t('llmLogs.queryParameters') }}</div>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
         <div>
           <label class="text-[10px] text-text-secondary uppercase block mb-1">{{ t('llmLogs.filters.taskType') }}</label>
@@ -158,24 +158,24 @@ onMounted(() => {
       </div>
       <div class="flex flex-wrap gap-2 mt-6">
         <button class="terminal-button text-xs py-1 px-3" @click="applyFilters">
-          APPLY_FILTERS
+          {{ t('llmLogs.applyFilters') }}
         </button>
         <button class="terminal-button-secondary text-xs py-1 px-3" @click="resetFilters">
-          RESET
+          {{ t('llmLogs.resetFilters') }}
         </button>
       </div>
     </div>
 
     <div v-if="loading" class="text-center py-10 font-mono text-primary animate-pulse">
-      > FETCHING_LOGS...
+      > {{ t('llmLogs.fetchingLogs') }}
     </div>
     <div v-else-if="error" class="text-secondary font-mono border border-secondary p-4 bg-secondary/10">
-      ERROR: {{ error }}
+      {{ t('llmLogs.errorLabel') }}: {{ error }}
     </div>
 
     <div v-else class="space-y-4">
       <div class="flex items-center justify-between text-xs font-mono text-text-secondary">
-        <div>TOTAL_RECORDS: <span class="text-white">{{ total }}</span></div>
+        <div>{{ t('llmLogs.totalRecords') }}: <span class="text-white">{{ total }}</span></div>
         <div class="flex items-center gap-2">
           <button class="hover:text-primary disabled:opacity-30" :disabled="!hasPrev" @click="prevPage">
             &lt; PREV
@@ -188,7 +188,7 @@ onMounted(() => {
       </div>
 
       <div v-if="logs.length === 0" class="text-text-secondary font-mono text-center py-10 border border-dashed border-border">
-        NO_DATA_FOUND
+        {{ t('llmLogs.noDataFound') }}
       </div>
 
       <div v-for="log in logs" :key="log.id" class="terminal-card p-4 space-y-3 group hover:border-primary/50 transition-colors">
@@ -206,22 +206,22 @@ onMounted(() => {
         </div>
 
         <div class="grid grid-cols-1 gap-2 md:grid-cols-3 text-xs font-mono text-text-secondary">
-          <div><span class="text-text-secondary uppercase">CONTENT:</span> <span class="text-white">{{ log.content_type || '-' }}</span></div>
-          <div><span class="text-text-secondary uppercase">PROFILE:</span> <span class="text-white">{{ log.profile_key || '-' }}</span></div>
-          <div><span class="text-text-secondary uppercase">MODEL:</span> <span class="text-white">{{ log.model || '-' }}</span></div>
+          <div><span class="text-text-secondary uppercase">{{ t('llmLogs.content') }}:</span> <span class="text-white">{{ log.content_type || '-' }}</span></div>
+          <div><span class="text-text-secondary uppercase">{{ t('llmLogs.profile') }}:</span> <span class="text-white">{{ log.profile_key || '-' }}</span></div>
+          <div><span class="text-text-secondary uppercase">{{ t('llmLogs.model') }}:</span> <span class="text-white">{{ log.model || '-' }}</span></div>
         </div>
 
         <div class="grid grid-cols-1 gap-2 md:grid-cols-3 text-xs font-mono text-text-secondary">
           <div>
-            <span class="text-text-secondary uppercase">TOKENS:</span>
+            <span class="text-text-secondary uppercase">{{ t('llmLogs.tokens') }}:</span>
             <span class="text-tertiary">{{ log.prompt_tokens ?? '-' }}</span> / <span class="text-tertiary">{{ log.completion_tokens ?? '-' }}</span>
           </div>
           <div>
-            <span class="text-text-secondary uppercase">TRUNCATED:</span>
+            <span class="text-text-secondary uppercase">{{ t('llmLogs.truncated') }}:</span>
             <span :class="log.request_meta?.input_truncated ? 'text-secondary' : 'text-white'">{{ getTruncationLabel(log.request_meta) }}</span>
           </div>
           <div v-if="log.error_message">
-            <span class="text-secondary uppercase">ERROR:</span>
+            <span class="text-secondary uppercase">{{ t('llmLogs.errorLabel') }}:</span>
             <span class="text-secondary">{{ log.error_message }}</span>
           </div>
         </div>

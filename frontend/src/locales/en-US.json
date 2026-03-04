@@ -9,11 +9,35 @@
     "languageZh": "中文",
     "languageEn": "English"
   },
+  "app": {
+    "sysTime": "SYS_TIME",
+    "apiStat": "API_STAT",
+    "dbConn": "DB_CONN",
+    "online": "ONLINE",
+    "active": "ACTIVE",
+    "version": "VERSION"
+  },
   "dashboard": {
     "title": "Welcome to Mind Analyst",
     "subtitle": "Your personal knowledge base for Bilibili creators.",
     "exploreAuthors": "Explore Authors",
-    "ingestContent": "Ingest Content"
+    "ingestContent": "Ingest Content",
+    "currentSession": "CURRENT_SESSION",
+    "operationModules": "OPERATION_MODULES",
+    "secLevel1": "SEC_LEVEL_1",
+    "cmdIngest": "CMD_01",
+    "cmdAuthors": "CMD_02",
+    "cmdChat": "CMD_03",
+    "cmdLogs": "CMD_04",
+    "chatInterface": "CHAT_INTERFACE",
+    "systemLogs": "SYSTEM_LOGS",
+    "systemMetrics": "SYSTEM_METRICS",
+    "live": "LIVE",
+    "vectorIndexLoad": "VECTOR_INDEX_LOAD",
+    "activeNodes": "Active_Nodes",
+    "queryLatency": "Query_Latency",
+    "ingestRate": "Ingest_Rate",
+    "totalTokens": "Total_Tokens"
   },
   "common": {
     "loading": "Loading...",
@@ -56,6 +80,15 @@
     "title": "Authors",
     "platform": "Platform"
   },
+  "authorList": {
+    "totalRecords": "TOTAL_RECORDS",
+    "systemLoading": "SYSTEM_LOADING_DATA...",
+    "id": "ID",
+    "videos": "VIDEOS",
+    "qualityFull": "QUALITY_FULL",
+    "asrReady": "ASR_READY",
+    "sumReady": "SUM_READY"
+  },
   "author": {
     "authorTypeLabel": "Author Type",
     "authorTypePlaceholder": "e.g. insight / howto",
@@ -95,6 +128,23 @@
       "qualityMissing": "Quality missing"
     }
   },
+  "authorDetail": {
+    "accessingArchives": "ACCESSING_SECURE_ARCHIVES...",
+    "status": "STATUS",
+    "active": "ACTIVE",
+    "totalVids": "TOTAL_VIDS",
+    "asrCoverage": "ASR_COVERAGE",
+    "tags": "TAGS",
+    "controlPanel": "CONTROL_PANEL",
+    "advancedOperations": "ADVANCED_OPERATIONS",
+    "type": "TYPE",
+    "cat": "CAT",
+    "date": "DATE",
+    "asr": "ASR",
+    "sum": "SUM",
+    "qual": "QUAL",
+    "open": "OPEN"
+  },
   "video": {
     "originalMedia": "Original Audio/Video",
     "audioNotSupported": "Your browser does not support the audio element.",
@@ -118,6 +168,21 @@
     "confirmResummarizeIncludeFallback": "Re-summarize this video (including fallback transcript)?",
     "confirmReprocessAsr": "Re-fetch transcript (ASR/subtitles) for this video?"
   },
+  "videoDetail": {
+    "loadingMedia": "LOADING_MEDIA_DATA...",
+    "published": "PUBLISHED",
+    "generic": "GENERIC",
+    "openSource": "OPEN_SOURCE",
+    "shortSummary": "SHORT_SUMMARY",
+    "keywords": "KEYWORDS",
+    "mediaPlayback": "MEDIA_PLAYBACK",
+    "analysisSummary": "ANALYSIS_SUMMARY",
+    "processed": "PROCESSED",
+    "noSummaryData": "NO_SUMMARY_DATA",
+    "rawTranscript": "RAW_TRANSCRIPT",
+    "segments": "SEGMENTS",
+    "noTranscriptData": "NO_TRANSCRIPT_DATA"
+  },
   "rag": {
     "reindexAuthor": "Reindex RAG (This Author)",
     "reindexAll": "Reindex RAG (All Authors)",
@@ -137,7 +202,15 @@
     "step1": "The system will open a browser to visit the author's Space page.",
     "step2": "It will extract video links (up to the limit you set).",
     "step3": "For each video, it downloads the audio, transcribes it, and vectorizes the content.",
-    "step4": "Once finished, you can chat with this author's digital twin in the Chat tab."
+    "step4": "Once finished, you can chat with this author's digital twin in the Chat tab.",
+    "protocol": "PROTOCOL",
+    "bilibiliExtraction": "BILIBILI_DATA_EXTRACTION",
+    "targetIdentifier": "TARGET_IDENTIFIER (MID)",
+    "fetchLimit": "FETCH_LIMIT (VIDEOS)",
+    "processingRequest": "PROCESSING_REQUEST...",
+    "systemOutputLog": "SYSTEM_OUTPUT_LOG",
+    "successLabel": "SUCCESS",
+    "errorLabel": "ERROR"
   },
   "chat": {
     "welcome": "Hello! I am your Mind Analyst. Ask me anything about the ingested videos.",
@@ -148,7 +221,17 @@
     "tagPlaceholder": "Tag filter (comma-separated, e.g.观点,金句)",
     "askPlaceholder": "Ask a question...",
     "send": "Send",
-    "errorPrefix": "Error: "
+    "errorPrefix": "Error: ",
+    "scope": "SCOPE",
+    "filter": "FILTER",
+    "reindexScope": "REINDEX_SCOPE",
+    "userInput": "USER_INPUT",
+    "analystCore": "ANALYST_CORE",
+    "init": "INIT",
+    "processingQuery": "PROCESSING_QUERY...",
+    "execute": "EXECUTE",
+    "sourcedDocuments": "Sourced_Documents",
+    "untitledRef": "UNTITLED_REF"
   },
   "llmLogs": {
     "title": "LLM Call Logs",
@@ -182,6 +265,19 @@
       "prompts": "Prompts",
       "response": "Response",
       "meta": "Metadata"
-    }
+    },
+    "systemEventStream": "SYSTEM_EVENT_STREAM",
+    "recording": "RECORDING",
+    "refreshStream": "REFRESH_STREAM",
+    "queryParameters": "QUERY_PARAMETERS",
+    "fetchingLogs": "FETCHING_LOGS...",
+    "totalRecords": "TOTAL_RECORDS",
+    "noDataFound": "NO_DATA_FOUND",
+    "content": "CONTENT",
+    "profile": "PROFILE",
+    "model": "MODEL",
+    "tokens": "TOKENS",
+    "truncated": "TRUNCATED",
+    "errorLabel": "ERROR"
   }
 }

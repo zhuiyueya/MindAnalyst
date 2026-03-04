@@ -151,7 +151,7 @@ const formatTime = (ms) => {
 
 <template>
   <div v-if="loading" class="text-center py-20 font-mono text-primary animate-pulse">
-    > LOADING_MEDIA_DATA...
+    > {{ t('videoDetail.loadingMedia') }}
   </div>
   <div v-else class="space-y-6">
     <!-- Header -->
@@ -160,38 +160,38 @@ const formatTime = (ms) => {
         <div>
           <h2 class="text-2xl font-bold text-text-primary mb-2 font-sans tracking-tight">{{ video.title }}</h2>
           <div class="flex flex-wrap items-center gap-4 text-xs font-mono text-text-secondary">
-             <span>PUBLISHED: <span class="text-white">{{ formatDate(video.published_at) }}</span></span>
-             <span>TYPE: <span class="text-white">{{ video.content_type || 'GENERIC' }}</span></span>
-             <a :href="video.url" target="_blank" class="text-tertiary hover:underline uppercase">[OPEN_SOURCE]</a>
+             <span>{{ t('videoDetail.published') }}: <span class="text-white">{{ formatDate(video.published_at) }}</span></span>
+             <span>{{ t('common.type') }}: <span class="text-white">{{ video.content_type || t('videoDetail.generic') }}</span></span>
+             <a :href="video.url" target="_blank" class="text-tertiary hover:underline uppercase">[{{ t('videoDetail.openSource') }}]</a>
           </div>
         </div>
         
          <div class="flex flex-wrap gap-2">
             <span :class="video.asr_status === 'ready' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
-              ASR: {{ statusText(video.asr_status) }}
+              {{ t('authorDetail.asr') }}: {{ statusText(video.asr_status) }}
             </span>
             <span :class="video.summary_status === 'ready' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
-              SUM: {{ statusText(video.summary_status) }}
+              {{ t('authorDetail.sum') }}: {{ statusText(video.summary_status) }}
             </span>
             <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'" class="text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
-              QUAL: {{ qualityText(video.content_quality) }}
+              {{ t('authorDetail.qual') }}: {{ qualityText(video.content_quality) }}
             </span>
              <span v-if="summary && summary.video_category" class="text-tertiary text-xs font-mono font-bold border border-border px-2 py-1 uppercase">
-              CAT: {{ summary.video_category }}
+              {{ t('authorDetail.cat') }}: {{ summary.video_category }}
             </span>
          </div>
       </div>
 
       <div class="border-t border-border mt-6 pt-4">
          <div v-if="videoShortSummary" class="mb-4">
-            <div class="text-[10px] text-text-secondary uppercase mb-1">SHORT_SUMMARY</div>
+            <div class="text-[10px] text-text-secondary uppercase mb-1">{{ t('videoDetail.shortSummary') }}</div>
             <div class="text-sm text-text-primary font-mono border-l-2 border-primary pl-3 py-1 bg-primary/5">
               {{ videoShortSummary }}
             </div>
          </div>
          
          <div v-if="videoShortKeywords.length" class="flex flex-wrap gap-2">
-            <span class="text-[10px] text-text-secondary uppercase self-center">KEYWORDS:</span>
+            <span class="text-[10px] text-text-secondary uppercase self-center">{{ t('videoDetail.keywords') }}:</span>
             <span
               v-for="kw in videoShortKeywords"
               :key="kw"
@@ -214,7 +214,7 @@ const formatTime = (ms) => {
             :disabled="processing"
             class="terminal-button text-xs py-1 px-2"
           >
-            SAVE
+            {{ t('common.save') }}
           </button>
         </div>
         <div class="h-6 w-px bg-border mx-2"></div>
@@ -246,7 +246,7 @@ const formatTime = (ms) => {
     <div v-if="playbackUrl" class="terminal-card">
       <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 flex items-center">
         <span class="w-1.5 h-1.5 bg-tertiary mr-2"></span>
-        MEDIA_PLAYBACK
+        {{ t('videoDetail.mediaPlayback') }}
       </h3>
       <audio controls class="w-full h-8" :src="playbackUrl">
         {{ t('video.audioNotSupported') }}
@@ -257,8 +257,8 @@ const formatTime = (ms) => {
       <!-- Summary -->
       <div class="terminal-card h-fit">
         <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2 flex items-center justify-between">
-           <span>ANALYSIS_SUMMARY</span>
-           <span class="text-[10px] text-primary">PROCESSED</span>
+           <span>{{ t('videoDetail.analysisSummary') }}</span>
+           <span class="text-[10px] text-primary">{{ t('videoDetail.processed') }}</span>
         </h3>
         
         <div v-if="summary" class="prose prose-invert max-w-none text-sm font-mono leading-relaxed">
@@ -278,14 +278,14 @@ const formatTime = (ms) => {
                 {{ summary.content }}
             </div>
         </div>
-        <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">NO_SUMMARY_DATA</div>
+        <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">{{ t('videoDetail.noSummaryData') }}</div>
       </div>
 
       <!-- Transcript -->
       <div class="terminal-card max-h-[800px] overflow-y-auto scrollbar-terminal">
         <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2 flex items-center justify-between">
-           <span>RAW_TRANSCRIPT</span>
-           <span class="text-[10px] text-secondary">{{ segments.length }} SEGMENTS</span>
+           <span>{{ t('videoDetail.rawTranscript') }}</span>
+           <span class="text-[10px] text-secondary">{{ segments.length }} {{ t('videoDetail.segments') }}</span>
         </h3>
         
         <div v-if="segments.length > 0" class="space-y-2 font-mono">
@@ -298,7 +298,7 @@ const formatTime = (ms) => {
                 </div>
             </div>
         </div>
-        <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">NO_TRANSCRIPT_DATA</div>
+        <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">{{ t('videoDetail.noTranscriptData') }}</div>
       </div>
     </div>
   </div>

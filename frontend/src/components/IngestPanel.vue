@@ -39,7 +39,7 @@ const handleIngest = async () => {
         <span class="text-primary mr-2">>></span> {{ t('ingest.title') }}
       </h2>
       <p class="font-mono text-xs text-text-secondary mt-2 pl-8">
-        PROTOCOL: BILIBILI_DATA_EXTRACTION
+        {{ t('ingest.protocol') }}: {{ t('ingest.bilibiliExtraction') }}
       </p>
     </div>
     
@@ -47,7 +47,7 @@ const handleIngest = async () => {
       <div class="grid grid-cols-1 gap-6">
         <div>
           <label class="block text-xs font-bold text-text-secondary uppercase mb-2 tracking-wider">
-            TARGET_IDENTIFIER (MID)
+            {{ t('ingest.targetIdentifier') }}
           </label>
           <div class="flex items-center border-b border-border focus-within:border-primary transition-colors">
             <span class="text-text-secondary font-mono text-sm px-2 bg-surface/50">
@@ -68,7 +68,7 @@ const handleIngest = async () => {
         
         <div>
           <label class="block text-xs font-bold text-text-secondary uppercase mb-2 tracking-wider">
-            FETCH_LIMIT (VIDEOS)
+            {{ t('ingest.fetchLimit') }}
           </label>
           <input 
             v-model.number="limit"
@@ -85,7 +85,7 @@ const handleIngest = async () => {
         >
           <span v-if="isLoading" class="flex items-center justify-center">
             <span class="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-3"></span>
-            PROCESSING_REQUEST...
+            {{ t('ingest.processingRequest') }}
           </span>
           <span v-else class="group-hover:tracking-[0.2em] transition-all duration-300">
             {{ t('ingest.start').toUpperCase() }}
@@ -96,14 +96,14 @@ const handleIngest = async () => {
 
     <!-- System Output Log -->
     <div v-if="message || error" class="terminal-card min-h-[100px] font-mono text-sm mb-8">
-      <div class="text-[10px] text-text-secondary uppercase mb-2 border-b border-border pb-1">SYSTEM_OUTPUT_LOG</div>
+      <div class="text-[10px] text-text-secondary uppercase mb-2 border-b border-border pb-1">{{ t('ingest.systemOutputLog') }}</div>
       
       <div v-if="message" class="text-primary">
-        <span class="text-white">[{{ new Date().toLocaleTimeString() }}]</span> SUCCESS: {{ message }}
+        <span class="text-white">[{{ new Date().toLocaleTimeString() }}]</span> {{ t('ingest.successLabel') }}: {{ message }}
       </div>
       
       <div v-if="error" class="text-secondary">
-        <span class="text-white">[{{ new Date().toLocaleTimeString() }}]</span> ERROR: {{ error }}
+        <span class="text-white">[{{ new Date().toLocaleTimeString() }}]</span> {{ t('ingest.errorLabel') }}: {{ error }}
       </div>
     </div>
     

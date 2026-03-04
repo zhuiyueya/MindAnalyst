@@ -16,7 +16,7 @@ const { t } = useI18n()
         </p>
       </div>
       <div class="text-right hidden sm:block">
-        <div class="text-xs text-text-secondary mb-1">CURRENT_SESSION</div>
+        <div class="text-xs text-text-secondary mb-1">{{ t('dashboard.currentSession') }}</div>
         <div class="font-mono text-primary">ID: 8X-9921-AZ</div>
       </div>
     </header>
@@ -27,9 +27,9 @@ const { t } = useI18n()
         <div class="flex items-center justify-between mb-6">
           <h3 class="text-sm font-bold text-text-secondary uppercase tracking-widest flex items-center">
             <span class="w-2 h-2 bg-primary mr-2 animate-pulse"></span>
-            OPERATION_MODULES
+            {{ t('dashboard.operationModules') }}
           </h3>
-          <span class="text-[10px] border border-border px-1 text-text-secondary">SEC_LEVEL_1</span>
+          <span class="text-[10px] border border-border px-1 text-text-secondary">{{ t('dashboard.secLevel1') }}</span>
         </div>
         
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -39,7 +39,7 @@ const { t } = useI18n()
           >
             <div class="absolute top-0 right-0 p-2 opacity-20 text-4xl group-hover:opacity-40 transition-opacity">📥</div>
             <div class="relative z-10">
-              <div class="text-xs text-primary mb-2 opacity-70">CMD_01</div>
+              <div class="text-xs text-primary mb-2 opacity-70">{{ t('dashboard.cmdIngest') }}</div>
               <div class="font-bold text-xl mb-2 group-hover:text-primary group-hover:translate-x-1 transition-transform">
                 {{ t('dashboard.ingestContent').toUpperCase() }}
               </div>
@@ -53,7 +53,7 @@ const { t } = useI18n()
           >
             <div class="absolute top-0 right-0 p-2 opacity-20 text-4xl group-hover:opacity-40 transition-opacity">◈</div>
             <div class="relative z-10">
-              <div class="text-xs text-tertiary mb-2 opacity-70">CMD_02</div>
+              <div class="text-xs text-tertiary mb-2 opacity-70">{{ t('dashboard.cmdAuthors') }}</div>
               <div class="font-bold text-xl mb-2 group-hover:text-tertiary group-hover:translate-x-1 transition-transform">
                 {{ t('dashboard.exploreAuthors').toUpperCase() }}
               </div>
@@ -67,9 +67,9 @@ const { t } = useI18n()
           >
             <div class="absolute top-0 right-0 p-2 opacity-20 text-4xl group-hover:opacity-40 transition-opacity">💬</div>
             <div class="relative z-10">
-              <div class="text-xs text-secondary mb-2 opacity-70">CMD_03</div>
+              <div class="text-xs text-secondary mb-2 opacity-70">{{ t('dashboard.cmdChat') }}</div>
               <div class="font-bold text-xl mb-2 group-hover:text-secondary group-hover:translate-x-1 transition-transform">
-                CHAT_INTERFACE
+                {{ t('dashboard.chatInterface') }}
               </div>
               <div class="h-1 w-8 bg-border group-hover:bg-secondary transition-colors"></div>
             </div>
@@ -81,9 +81,9 @@ const { t } = useI18n()
           >
             <div class="absolute top-0 right-0 p-2 opacity-20 text-4xl group-hover:opacity-40 transition-opacity">⚡</div>
             <div class="relative z-10">
-              <div class="text-xs text-white mb-2 opacity-70">CMD_04</div>
+              <div class="text-xs text-white mb-2 opacity-70">{{ t('dashboard.cmdLogs') }}</div>
               <div class="font-bold text-xl mb-2 group-hover:text-white group-hover:translate-x-1 transition-transform">
-                SYSTEM_LOGS
+                {{ t('dashboard.systemLogs') }}
               </div>
               <div class="h-1 w-8 bg-border group-hover:bg-white transition-colors"></div>
             </div>
@@ -97,15 +97,15 @@ const { t } = useI18n()
            <div class="flex items-center justify-between mb-6">
             <h3 class="text-sm font-bold text-text-secondary uppercase tracking-widest flex items-center">
               <span class="w-2 h-2 bg-secondary mr-2"></span>
-              SYSTEM_METRICS
+              {{ t('dashboard.systemMetrics') }}
             </h3>
-             <span class="text-[10px] animate-pulse text-secondary">LIVE</span>
+             <span class="text-[10px] animate-pulse text-secondary">{{ t('dashboard.live') }}</span>
           </div>
           
           <div class="space-y-6 font-mono">
             <div class="relative">
               <div class="flex justify-between text-xs text-text-secondary mb-1">
-                <span>VECTOR_INDEX_LOAD</span>
+                <span>{{ t('dashboard.vectorIndexLoad') }}</span>
                 <span>84%</span>
               </div>
               <div class="w-full bg-border h-2">
@@ -115,19 +115,19 @@ const { t } = useI18n()
             
             <div class="grid grid-cols-2 gap-4 pt-4 border-t border-border">
               <div>
-                <div class="text-[10px] text-text-secondary uppercase">Active_Nodes</div>
+                <div class="text-[10px] text-text-secondary uppercase">{{ t('dashboard.activeNodes') }}</div>
                 <div class="text-2xl font-bold text-white">12</div>
               </div>
               <div>
-                <div class="text-[10px] text-text-secondary uppercase">Query_Latency</div>
+                <div class="text-[10px] text-text-secondary uppercase">{{ t('dashboard.queryLatency') }}</div>
                 <div class="text-2xl font-bold text-tertiary">42ms</div>
               </div>
               <div>
-                <div class="text-[10px] text-text-secondary uppercase">Ingest_Rate</div>
+                <div class="text-[10px] text-text-secondary uppercase">{{ t('dashboard.ingestRate') }}</div>
                 <div class="text-2xl font-bold text-secondary">2.4/s</div>
               </div>
               <div>
-                <div class="text-[10px] text-text-secondary uppercase">Total_Tokens</div>
+                <div class="text-[10px] text-text-secondary uppercase">{{ t('dashboard.totalTokens') }}</div>
                 <div class="text-2xl font-bold text-primary">1.2M</div>
               </div>
             </div>
