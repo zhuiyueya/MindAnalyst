@@ -159,10 +159,10 @@ onMounted(() => {
       </div>
       
       <div v-if="isFilterOpen" class="flex flex-wrap gap-2 pb-2">
-        <button class="terminal-button text-[10px] py-0 px-2 h-6" @click="applyFilters">
+        <button class="terminal-button text-[10px] py-0 px-2 h-6 flex items-center justify-center leading-none" @click="applyFilters">
           {{ t('llmLogs.applyFilters') }}
         </button>
-        <button class="terminal-button-secondary text-[10px] py-0 px-2 h-6" @click="resetFilters">
+        <button class="terminal-button-secondary text-[10px] py-0 px-2 h-6 flex items-center justify-center leading-none" @click="resetFilters">
           {{ t('llmLogs.resetFilters') }}
         </button>
       </div>

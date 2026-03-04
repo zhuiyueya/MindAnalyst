@@ -196,15 +196,15 @@ const formatTime = (ms) => {
                 :placeholder="t('author.authorTypePlaceholder')"
                 class="terminal-input text-[10px] py-1 w-24 h-6"
               />
-              <button @click="saveContentType" :disabled="processing" class="terminal-button text-[10px] py-0 px-2 h-6">
+              <button @click="saveContentType" :disabled="processing" class="terminal-button text-[10px] py-0 px-2 h-6 flex items-center justify-center leading-none">
                 {{ t('common.save') }}
               </button>
            </div>
            <div class="flex items-center gap-1">
-              <button @click="triggerResummarize" :disabled="processing" class="terminal-button text-[10px] py-0 px-2 h-6">
+              <button @click="triggerResummarize" :disabled="processing" class="terminal-button text-[10px] py-0 px-2 h-6 flex items-center justify-center leading-none">
                 {{ t('video.resummarize').toUpperCase() }}
               </button>
-              <button @click="triggerReprocessAsr" :disabled="processing" class="terminal-button-secondary text-[10px] py-0 px-2 h-6">
+              <button @click="triggerReprocessAsr" :disabled="processing" class="terminal-button-secondary text-[10px] py-0 px-2 h-6 flex items-center justify-center leading-none">
                 ASR
               </button>
            </div>
