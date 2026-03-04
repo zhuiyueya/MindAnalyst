@@ -101,8 +101,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between border-b border-border pb-4">
+  <div class="space-y-6 h-[calc(100vh-80px)] flex flex-col">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between border-b border-border pb-4 flex-shrink-0">
       <div>
         <h2 class="text-3xl font-bold text-text-primary uppercase tracking-widest flex items-center">
           <span class="text-secondary mr-2">>></span> {{ t('llmLogs.title') }}
@@ -119,8 +119,8 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Filter Panel -->
-    <div class="terminal-card">
+    <!-- Filter Panel (Fixed height or collapsible, but here let's keep it fixed and scroll the list) -->
+    <div class="terminal-card flex-shrink-0">
       <div class="text-[10px] font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2">{{ t('llmLogs.queryParameters') }}</div>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
         <div>
@@ -173,7 +173,7 @@ onMounted(() => {
       {{ t('llmLogs.errorLabel') }}: {{ error }}
     </div>
 
-    <div v-else class="space-y-4">
+    <div v-else class="flex-1 overflow-y-auto pr-2 scrollbar-terminal space-y-4">
       <div class="flex items-center justify-between text-xs font-mono text-text-secondary">
         <div>{{ t('llmLogs.totalRecords') }}: <span class="text-white">{{ total }}</span></div>
         <div class="flex items-center gap-2">

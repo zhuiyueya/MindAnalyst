@@ -87,15 +87,17 @@ setInterval(() => {
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-1 ml-64 p-8 min-h-screen relative">
+    <main class="flex-1 ml-64 p-8 min-h-screen h-screen overflow-hidden relative flex flex-col">
       <!-- Top Bar Decoration -->
-      <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-transparent to-transparent opacity-50"></div>
+      <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-transparent to-transparent opacity-50 z-50"></div>
       
-      <router-view v-slot="{ Component }">
-        <transition name="glitch" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
+      <div class="flex-1 overflow-y-auto pr-2 scrollbar-terminal relative">
+        <router-view v-slot="{ Component }">
+          <transition name="glitch" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </div>
     </main>
   </div>
 </template>
@@ -117,5 +119,20 @@ setInterval(() => {
   opacity: 0;
   transform: translateX(10px);
   filter: blur(4px);
+}
+
+.scrollbar-terminal::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-terminal::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-terminal::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 0;
+}
+.scrollbar-terminal::-webkit-scrollbar-thumb:hover {
+  background: #ccff00;
 }
 </style>

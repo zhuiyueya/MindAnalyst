@@ -56,7 +56,9 @@
     "viewDetails": "View Details",
     "yes": "Yes",
     "no": "No",
-    "originalLink": "Original Link"
+    "originalLink": "Original Link",
+    "backToAuthors": "Back to Authors",
+    "backToAuthor": "Back to Author"
   },
   "status": {
     "labels": {
@@ -93,9 +95,9 @@
     "authorTypeLabel": "Author Type",
     "authorTypePlaceholder": "e.g. insight / howto",
     "regenerateReport": "Regenerate Report",
-    "resummarizeAll": "Re-Summarize All Videos",
-    "resummarizePending": "Re-Summarize Pending (No Fallback)",
-    "resummarizeAllIncludeFallback": "Re-Summarize (Include Fallback)",
+    "resummarizeAll": "Summarize All Videos",
+    "resummarizePending": "Summarize Pending (No Fallback)",
+    "resummarizeAllIncludeFallback": "Summarize All (Include Fallback)",
     "compressShortSummaries": "Compress Short Summaries",
     "generateCategories": "Generate Author Categories",
     "generateCategoryReports": "Generate Category Reports",
@@ -113,6 +115,7 @@
     "noReport": "No report generated yet.",
     "categoryList": "Author Categories",
     "categoryReportLabel": "Category Reports",
+    "backToAuthors": "Back to Authors",
     "status": {
       "videos": "Videos",
       "asrReady": "ASR ready",

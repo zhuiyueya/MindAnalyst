@@ -327,11 +327,18 @@ const triggerReprocessAsr = async () => {
   <div v-if="loading" class="text-center py-20 font-mono text-primary animate-pulse">
     > {{ t('authorDetail.accessingArchives') }}
   </div>
-  <div v-else class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+  <div v-else class="flex flex-col lg:flex-row gap-8 h-[calc(100vh-80px)] overflow-hidden">
     
-    <!-- Left Column: Identity & Actions -->
-    <div class="lg:col-span-4 space-y-6">
+    <!-- Left Column: Identity & Actions (Fixed) -->
+    <div class="lg:w-1/3 space-y-6 overflow-y-auto pr-2 scrollbar-terminal">
       <div class="terminal-card">
+        <div class="flex items-center justify-between mb-4 border-b border-border pb-2">
+           <button @click="$router.push('/authors')" class="text-xs text-text-secondary hover:text-primary flex items-center">
+             &lt; {{ t('common.backToAuthors') }}
+           </button>
+           <span class="text-[10px] text-text-secondary uppercase">ID_CARD</span>
+        </div>
+
         <div class="flex flex-col items-center text-center mb-6">
           <div class="relative mb-4">
              <img 
@@ -402,14 +409,17 @@ const triggerReprocessAsr = async () => {
           </div>
 
           <div class="grid grid-cols-1 gap-2">
-            <button @click="triggerRegenerateReport" :disabled="processing" class="terminal-button text-xs text-center w-full">
-              {{ t('author.regenerateReport') }}
-            </button>
             <button @click="triggerResummarizeAll" :disabled="processing" class="terminal-button text-xs text-center w-full">
               {{ t('author.resummarizeAll') }}
             </button>
+            <button @click="triggerCompressShortSummaries" :disabled="processing" class="terminal-button text-xs text-center w-full">
+              {{ t('author.compressShortSummaries') }}
+            </button>
             <button @click="triggerGenerateCategories" :disabled="processing" class="terminal-button text-xs text-center w-full">
               {{ t('author.generateCategories') }}
+            </button>
+            <button @click="triggerGenerateCategoryReports" :disabled="processing" class="terminal-button text-xs text-center w-full">
+              {{ t('author.generateCategoryReports') }}
             </button>
              <button @click="triggerRagReindexAuthor" :disabled="processing" class="terminal-button-secondary text-xs text-center w-full">
               {{ t('rag.reindexAuthor') }}
@@ -419,9 +429,8 @@ const triggerReprocessAsr = async () => {
            <details class="text-[10px] text-text-secondary cursor-pointer mt-4">
             <summary class="hover:text-primary">{{ t('authorDetail.advancedOperations') }}</summary>
             <div class="grid grid-cols-1 gap-2 mt-2 pl-2 border-l border-border">
+              <button @click="triggerRegenerateReport" class="text-left hover:text-white">>> {{ t('author.regenerateReport') }}</button>
               <button @click="triggerResummarizePending" class="text-left hover:text-white">>> {{ t('author.resummarizePending') }}</button>
-              <button @click="triggerCompressShortSummaries" class="text-left hover:text-white">>> {{ t('author.compressShortSummaries') }}</button>
-              <button @click="triggerGenerateCategoryReports" class="text-left hover:text-white">>> {{ t('author.generateCategoryReports') }}</button>
               <button @click="triggerReprocessAsr" class="text-left hover:text-secondary">>> {{ t('author.reprocessAsr') }}</button>
               <button @click="triggerResummarizeAll(true)" class="text-left hover:text-secondary">>> {{ t('author.resummarizeAllIncludeFallback') }}</button>
             </div>
@@ -430,10 +439,10 @@ const triggerReprocessAsr = async () => {
       </div>
     </div>
 
-    <!-- Right Column: Data Feed -->
-    <div class="lg:col-span-8">
+    <!-- Right Column: Data Feed (Scrollable) -->
+    <div class="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <!-- Tabs -->
-      <div class="flex border-b border-border mb-6">
+      <div class="flex border-b border-border mb-6 flex-shrink-0">
         <button 
           @click="activeTab = 'report'"
           :class="[activeTab === 'report' ? 'border-b-2 border-primary text-primary' : 'text-text-secondary hover:text-white', 'px-6 py-3 text-sm font-mono uppercase tracking-wider transition-colors']"
@@ -448,69 +457,70 @@ const triggerReprocessAsr = async () => {
         </button>
       </div>
 
-      <!-- Report View -->
-      <div v-if="activeTab === 'report'" class="terminal-card min-h-[500px]">
-        <div class="flex flex-wrap gap-4 mb-6 border-b border-border pb-4">
-           <div v-if="reportTypes.length" class="flex items-center gap-2">
-            <span class="text-xs text-text-secondary uppercase">{{ t('authorDetail.type') }}:</span>
-            <button
-              v-for="type in reportTypes"
-              :key="type"
-              @click="selectedReportType = type"
-              :class="[selectedReportType === type ? 'bg-primary text-black' : 'bg-surface border border-border text-text-secondary', 'px-2 py-1 text-[10px] uppercase font-bold transition-colors']"
-            >
-              {{ type }}
-            </button>
-          </div>
-           <div v-if="categoryReportKeys.length" class="flex items-center gap-2">
-            <span class="text-xs text-text-secondary uppercase">{{ t('authorDetail.cat') }}:</span>
-             <button
-              v-for="cat in categoryReportKeys"
-              :key="cat"
-              @click="selectedCategory = cat"
-              :class="[selectedCategory === cat ? 'bg-tertiary text-black' : 'bg-surface border border-border text-text-secondary', 'px-2 py-1 text-[10px] uppercase font-bold transition-colors']"
-            >
-              {{ cat }}
-            </button>
-          </div>
-        </div>
-        
-        <div class="font-mono text-sm leading-relaxed" v-html="renderReport"></div>
-      </div>
-
-      <!-- Videos View -->
-      <div v-else-if="activeTab === 'videos'" class="space-y-4">
-        <div v-for="video in videos" :key="video.id" class="terminal-card p-4 hover:border-primary/50 transition-colors group">
-          <div class="flex justify-between items-start">
-            <div class="flex-1">
-              <h4 
-                class="text-base font-bold text-text-primary cursor-pointer hover:text-primary transition-colors mb-2" 
-                @click="$router.push(`/videos/${video.id}`)"
+      <div class="flex-1 overflow-y-auto pr-2 scrollbar-terminal">
+        <!-- Report View -->
+        <div v-if="activeTab === 'report'" class="terminal-card min-h-[500px]">
+          <div class="flex flex-wrap gap-4 mb-6 border-b border-border pb-4 sticky top-0 bg-surface z-10 pt-2">
+             <div v-if="reportTypes.length" class="flex items-center gap-2">
+              <span class="text-xs text-text-secondary uppercase">{{ t('authorDetail.type') }}:</span>
+              <button
+                v-for="type in reportTypes"
+                :key="type"
+                @click="selectedReportType = type"
+                :class="[selectedReportType === type ? 'bg-primary text-black' : 'bg-surface border border-border text-text-secondary', 'px-2 py-1 text-[10px] uppercase font-bold transition-colors']"
               >
-                {{ video.title }}
-              </h4>
-              <div class="flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-mono text-text-secondary uppercase mb-3">
-                <span>{{ t('authorDetail.date') }}: {{ formatDate(video.published_at) }}</span>
-                <span>{{ t('authorDetail.type') }}: {{ video.type }}</span>
-                <span :class="statusClass(video.asr_status)">{{ t('authorDetail.asr') }}: {{ statusText(video.asr_status) }}</span>
-                <span :class="statusClass(video.summary_status)">{{ t('authorDetail.sum') }}: {{ statusText(video.summary_status) }}</span>
-                <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'">{{ t('authorDetail.qual') }}: {{ qualityText(video.content_quality) }}</span>
-              </div>
-              
-              <div v-if="videoShortSummary(video)" class="text-xs text-text-primary/80 font-mono pl-3 border-l-2 border-border group-hover:border-primary transition-colors">
-                {{ videoShortSummary(video) }}
-              </div>
+                {{ type }}
+              </button>
             </div>
-             <button 
-                 @click="$router.push(`/videos/${video.id}`)"
-                 class="ml-4 text-tertiary text-xs hover:underline uppercase"
-               >
-                 [{{ t('authorDetail.open') }}]
-             </button>
+             <div v-if="categoryReportKeys.length" class="flex items-center gap-2">
+              <span class="text-xs text-text-secondary uppercase">{{ t('authorDetail.cat') }}:</span>
+               <button
+                v-for="cat in categoryReportKeys"
+                :key="cat"
+                @click="selectedCategory = cat"
+                :class="[selectedCategory === cat ? 'bg-tertiary text-black' : 'bg-surface border border-border text-text-secondary', 'px-2 py-1 text-[10px] uppercase font-bold transition-colors']"
+              >
+                {{ cat }}
+              </button>
+            </div>
+          </div>
+          
+          <div class="font-mono text-sm leading-relaxed" v-html="renderReport"></div>
+        </div>
+
+        <!-- Videos View -->
+        <div v-else-if="activeTab === 'videos'" class="space-y-4 pb-12">
+          <div v-for="video in videos" :key="video.id" class="terminal-card p-4 hover:border-primary/50 transition-colors group">
+            <div class="flex justify-between items-start">
+              <div class="flex-1">
+                <h4 
+                  class="text-base font-bold text-text-primary cursor-pointer hover:text-primary transition-colors mb-2" 
+                  @click="$router.push(`/videos/${video.id}`)"
+                >
+                  {{ video.title }}
+                </h4>
+                <div class="flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-mono text-text-secondary uppercase mb-3">
+                  <span>{{ t('authorDetail.date') }}: {{ formatDate(video.published_at) }}</span>
+                  <span>{{ t('authorDetail.type') }}: {{ video.type }}</span>
+                  <span :class="statusClass(video.asr_status)">{{ t('authorDetail.asr') }}: {{ statusText(video.asr_status) }}</span>
+                  <span :class="statusClass(video.summary_status)">{{ t('authorDetail.sum') }}: {{ statusText(video.summary_status) }}</span>
+                  <span :class="video.content_quality === 'full' ? 'text-primary' : 'text-secondary'">{{ t('authorDetail.qual') }}: {{ qualityText(video.content_quality) }}</span>
+                </div>
+                
+                <div v-if="videoShortSummary(video)" class="text-xs text-text-primary/80 font-mono pl-3 border-l-2 border-border group-hover:border-primary transition-colors">
+                  {{ videoShortSummary(video) }}
+                </div>
+              </div>
+               <button 
+                   @click="$router.push(`/videos/${video.id}`)"
+                   class="ml-4 text-tertiary text-xs hover:underline uppercase"
+                 >
+                   [{{ t('authorDetail.open') }}]
+               </button>
+            </div>
           </div>
         </div>
       </div>
-
     </div>
   </div>
 </template>

@@ -5,8 +5,8 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <div class="max-w-7xl mx-auto">
-    <header class="mb-12 flex items-end justify-between border-b border-border pb-6">
+  <div class="max-w-7xl mx-auto h-[calc(100vh-80px)] overflow-hidden flex flex-col">
+    <header class="mb-12 flex items-end justify-between border-b border-border pb-6 flex-shrink-0">
       <div>
         <h1 class="text-4xl font-bold text-primary mb-2 tracking-tight">
           {{ t('dashboard.title').toUpperCase() }}
@@ -21,7 +21,7 @@ const { t } = useI18n()
       </div>
     </header>
     
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 overflow-y-auto pr-2 scrollbar-terminal">
       <!-- Quick Actions Module -->
       <div class="terminal-card lg:col-span-2">
         <div class="flex items-center justify-between mb-6">

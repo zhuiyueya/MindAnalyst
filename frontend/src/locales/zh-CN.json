@@ -56,7 +56,9 @@
     "viewDetails": "查看详情",
     "yes": "是",
     "no": "否",
-    "originalLink": "原始链接"
+    "originalLink": "原始链接",
+    "backToAuthors": "返回作者列表",
+    "backToAuthor": "返回作者详情"
   },
   "status": {
     "labels": {
@@ -93,17 +95,17 @@
     "authorTypeLabel": "作者类型",
     "authorTypePlaceholder": "例如：insight / howto",
     "regenerateReport": "重新生成报告",
-    "resummarizeAll": "重新总结全部视频",
-    "resummarizePending": "仅重新总结未完成摘要（非回退）",
-    "resummarizeAllIncludeFallback": "重新总结（包含回退转写）",
+    "resummarizeAll": "总结全部视频",
+    "resummarizePending": "仅总结未完成摘要（非回退）",
+    "resummarizeAllIncludeFallback": "总结全部（包含回退转写）",
     "compressShortSummaries": "压缩短摘要",
     "generateCategories": "生成作者分类",
     "generateCategoryReports": "生成分类报告",
     "reprocessAsr": "重新抓取转写（ASR）",
     "confirmRegenerateReport": "重新生成作者报告？这可能需要一段时间。",
-    "confirmResummarizeAll": "重新总结全部视频？这是一个较重的操作。",
-    "confirmResummarizePending": "仅重新总结摘要未就绪且非回退的视频？",
-    "confirmResummarizeAllIncludeFallback": "重新总结全部视频（包含回退转写）？",
+    "confirmResummarizeAll": "总结全部视频？这是一个较重的操作。",
+    "confirmResummarizePending": "仅总结摘要未就绪且非回退的视频？",
+    "confirmResummarizeAllIncludeFallback": "总结全部视频（包含回退转写）？",
     "confirmCompressShortSummaries": "开始压缩该作者所有短摘要？",
     "confirmGenerateCategories": "开始生成作者分类并打标签？",
     "confirmGenerateCategoryReports": "开始生成该作者的分类报告？",
@@ -113,6 +115,7 @@
     "noReport": "暂无报告。",
     "categoryList": "作者分类",
     "categoryReportLabel": "分类报告",
+    "backToAuthors": "返回作者列表",
     "status": {
       "videos": "视频数",
       "asrReady": "ASR 完成",

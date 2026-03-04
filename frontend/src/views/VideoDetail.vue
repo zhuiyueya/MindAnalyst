@@ -153,9 +153,16 @@ const formatTime = (ms) => {
   <div v-if="loading" class="text-center py-20 font-mono text-primary animate-pulse">
     > {{ t('videoDetail.loadingMedia') }}
   </div>
-  <div v-else class="space-y-6">
-    <!-- Header -->
-    <div class="terminal-card">
+  <div v-else class="flex flex-col h-[calc(100vh-80px)] overflow-hidden">
+    <!-- Header (Fixed) -->
+    <div class="terminal-card mb-6 flex-shrink-0">
+      <div class="flex items-center justify-between mb-4 border-b border-border pb-2">
+         <button @click="$router.back()" class="text-xs text-text-secondary hover:text-primary flex items-center">
+           &lt; {{ t('common.backToAuthor') }}
+         </button>
+         <span class="text-[10px] text-text-secondary uppercase">MEDIA_FILE</span>
+      </div>
+
       <div class="flex flex-col md:flex-row justify-between items-start gap-4">
         <div>
           <h2 class="text-2xl font-bold text-text-primary mb-2 font-sans tracking-tight">{{ video.title }}</h2>
@@ -242,64 +249,68 @@ const formatTime = (ms) => {
       </div>
     </div>
 
-    <!-- Playback -->
-    <div v-if="playbackUrl" class="terminal-card">
-      <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 flex items-center">
-        <span class="w-1.5 h-1.5 bg-tertiary mr-2"></span>
-        {{ t('videoDetail.mediaPlayback') }}
-      </h3>
-      <audio controls class="w-full h-8" :src="playbackUrl">
-        {{ t('video.audioNotSupported') }}
-      </audio>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Summary -->
-      <div class="terminal-card h-fit">
-        <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2 flex items-center justify-between">
-           <span>{{ t('videoDetail.analysisSummary') }}</span>
-           <span class="text-[10px] text-primary">{{ t('videoDetail.processed') }}</span>
-        </h3>
-        
-        <div v-if="summary" class="prose prose-invert max-w-none text-sm font-mono leading-relaxed">
-            <div v-if="summaryBlocks.length" class="space-y-4">
-                <div v-for="(block, idx) in summaryBlocks" :key="idx" class="border border-border p-4 bg-surface/50">
-                    <div class="text-[10px] font-bold uppercase tracking-wide text-tertiary mb-2 border-b border-border/50 pb-1">{{ block.type }}</div>
-                    <div class="prose prose-invert max-w-none text-xs" v-html="renderMarkdown(block.text)"></div>
-                </div>
-            </div>
-            <div v-else-if="bracketBlocks.length" class="space-y-4">
-                <div v-for="(block, idx) in bracketBlocks" :key="idx" class="border border-border p-4 bg-surface/50">
-                    <div class="text-[10px] font-bold tracking-wide text-tertiary mb-2 border-b border-border/50 pb-1">[{{ block.tag }}]</div>
-                    <div class="prose prose-invert max-w-none text-xs" v-html="renderMarkdown(block.text)"></div>
-                </div>
-            </div>
-            <div v-else-if="summary.content" class="whitespace-pre-wrap text-xs">
-                {{ summary.content }}
-            </div>
+    <!-- Playback (Fixed if present, scrollable if large?) -> Keep it scrollable with content -->
+    
+    <!-- Content Area (Scrollable) -->
+    <div class="flex-1 overflow-y-auto pr-2 scrollbar-terminal space-y-6 pb-12">
+        <div v-if="playbackUrl" class="terminal-card">
+          <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 flex items-center">
+            <span class="w-1.5 h-1.5 bg-tertiary mr-2"></span>
+            {{ t('videoDetail.mediaPlayback') }}
+          </h3>
+          <audio controls class="w-full h-8" :src="playbackUrl">
+            {{ t('video.audioNotSupported') }}
+          </audio>
         </div>
-        <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">{{ t('videoDetail.noSummaryData') }}</div>
-      </div>
 
-      <!-- Transcript -->
-      <div class="terminal-card max-h-[800px] overflow-y-auto scrollbar-terminal">
-        <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2 flex items-center justify-between">
-           <span>{{ t('videoDetail.rawTranscript') }}</span>
-           <span class="text-[10px] text-secondary">{{ segments.length }} {{ t('videoDetail.segments') }}</span>
-        </h3>
-        
-        <div v-if="segments.length > 0" class="space-y-2 font-mono">
-            <div v-for="seg in segments" :key="seg.id" class="text-xs hover:bg-white/5 p-1 rounded transition-colors group">
-                <div class="flex gap-3">
-                    <span class="text-text-secondary min-w-[80px] select-none group-hover:text-primary transition-colors">
-                        [{{ formatTime(seg.start_time_ms) }}]
-                    </span>
-                    <p class="text-text-primary group-hover:text-white">{{ seg.text }}</p>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Summary -->
+          <div class="terminal-card h-fit">
+            <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2 flex items-center justify-between sticky top-0 bg-surface z-10 pt-2">
+               <span>{{ t('videoDetail.analysisSummary') }}</span>
+               <span class="text-[10px] text-primary">{{ t('videoDetail.processed') }}</span>
+            </h3>
+            
+            <div v-if="summary" class="prose prose-invert max-w-none text-sm font-mono leading-relaxed">
+                <div v-if="summaryBlocks.length" class="space-y-4">
+                    <div v-for="(block, idx) in summaryBlocks" :key="idx" class="border border-border p-4 bg-surface/50">
+                        <div class="text-[10px] font-bold uppercase tracking-wide text-tertiary mb-2 border-b border-border/50 pb-1">{{ block.type }}</div>
+                        <div class="prose prose-invert max-w-none text-xs" v-html="renderMarkdown(block.text)"></div>
+                    </div>
+                </div>
+                <div v-else-if="bracketBlocks.length" class="space-y-4">
+                    <div v-for="(block, idx) in bracketBlocks" :key="idx" class="border border-border p-4 bg-surface/50">
+                        <div class="text-[10px] font-bold tracking-wide text-tertiary mb-2 border-b border-border/50 pb-1">[{{ block.tag }}]</div>
+                        <div class="prose prose-invert max-w-none text-xs" v-html="renderMarkdown(block.text)"></div>
+                    </div>
+                </div>
+                <div v-else-if="summary.content" class="whitespace-pre-wrap text-xs">
+                    {{ summary.content }}
                 </div>
             </div>
+            <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">{{ t('videoDetail.noSummaryData') }}</div>
+          </div>
+
+          <!-- Transcript -->
+          <div class="terminal-card h-fit">
+            <h3 class="text-xs font-bold text-text-secondary uppercase mb-4 border-b border-border pb-2 flex items-center justify-between sticky top-0 bg-surface z-10 pt-2">
+               <span>{{ t('videoDetail.rawTranscript') }}</span>
+               <span class="text-[10px] text-secondary">{{ segments.length }} {{ t('videoDetail.segments') }}</span>
+            </h3>
+            
+            <div v-if="segments.length > 0" class="space-y-2 font-mono max-h-[800px] overflow-y-auto scrollbar-terminal">
+                <div v-for="seg in segments" :key="seg.id" class="text-xs hover:bg-white/5 p-1 rounded transition-colors group">
+                    <div class="flex gap-3">
+                        <span class="text-text-secondary min-w-[80px] select-none group-hover:text-primary transition-colors">
+                            [{{ formatTime(seg.start_time_ms) }}]
+                        </span>
+                        <p class="text-text-primary group-hover:text-white">{{ seg.text }}</p>
+                    </div>
+                </div>
+            </div>
+            <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">{{ t('videoDetail.noTranscriptData') }}</div>
+          </div>
         </div>
-        <div v-else class="text-text-secondary italic text-xs border border-dashed border-border p-4 text-center">{{ t('videoDetail.noTranscriptData') }}</div>
-      </div>
     </div>
   </div>
 </template>
