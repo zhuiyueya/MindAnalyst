@@ -403,7 +403,7 @@ const triggerReprocessAsr = async () => {
               :placeholder="t('author.authorTypePlaceholder')"
               class="terminal-input text-xs"
             />
-            <button @click="saveAuthorType" :disabled="processing" class="terminal-button text-xs py-1 px-2">
+            <button @click="saveAuthorType" :disabled="processing" class="terminal-button text-xs py-1 px-2 whitespace-nowrap">
               {{ t('common.save') }}
             </button>
           </div>
